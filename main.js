@@ -63,52 +63,100 @@ const MAX_LINES = 3;
 let cachedNodes = null;
 let cachedConnections = null;
 
-// ---------- Generate cam positions with spread ----------
+// ---------- Grid-based placement to avoid overlap ----------
 function generatePositions(){
     if(locked && cachedNodes) return cachedNodes;
-    const nodes = [];
-    const padding = 20;
-    const area = PANEL_SIZE - BUTTON_SIZE - padding*2;
-    for(let i=0;i<cams.length;i++){
-        const x = padding + Math.random()*area;
-        const y = padding + Math.random()*area;
-        nodes.push({cam:cams[i], x, y, connections:[], usedSides:new Set()});
+
+    const gridRows = 4;
+    const gridCols = 4;
+    const cellW = PANEL_SIZE/gridCols;
+    const cellH = PANEL_SIZE/gridRows;
+
+    const availableCells=[];
+    for(let r=0;r<gridRows;r++){
+        for(let c=0;c<gridCols;c++){
+            availableCells.push({r,c});
+        }
     }
+
+    const nodes=[];
+    cams.forEach(cam=>{
+        const idx=Math.floor(Math.random()*availableCells.length);
+        const cell=availableCells.splice(idx,1)[0];
+
+        // Random offset within cell for “random” look
+        const offsetX = Math.random()*(cellW-BUTTON_SIZE-10)+5;
+        const offsetY = Math.random()*(cellH-BUTTON_SIZE-10)+5;
+
+        const x = cell.c*cellW + offsetX;
+        const y = cell.r*cellH + offsetY;
+
+        nodes.push({cam,x,y,connections:[],usedSides:new Set()});
+    });
+
     if(!locked) cachedNodes = nodes;
     return nodes;
 }
 
-// ---------- Pick different sides ----------
+// ---------- Pick sides ----------
 function pickDifferentSides(a,b){
     const sides=["top","bottom","left","right"];
     const availA = sides.filter(s=>!a.usedSides.has(s));
     const availB = sides.filter(s=>!b.usedSides.has(s));
     let sideA, sideB;
+
+    // Prefer horizontal if possible, else vertical
     if(availA.includes("right") && availB.includes("left")) { sideA="right"; sideB="left"; }
     else if(availA.includes("left") && availB.includes("right")) { sideA="left"; sideB="right"; }
     else if(availA.includes("top") && availB.includes("bottom")) { sideA="top"; sideB="bottom"; }
     else if(availA.includes("bottom") && availB.includes("top")) { sideA="bottom"; sideB="top"; }
     else { sideA = availA[0] || "right"; sideB = availB[0] || "left"; }
+
     a.usedSides.add(sideA);
     b.usedSides.add(sideB);
-    return [sideA, sideB];
+    return [sideA,sideB];
 }
 
-// ---------- Connect nodes with min/max lines ----------
+// ---------- Track segments to prevent crossing ----------
+const usedSegmentsH = [];
+const usedSegmentsV = [];
+
+// ---------- Check segment crossing ----------
+function segmentCrosses(x1,y1,x2,y2,isH){
+    const segments = isH ? usedSegmentsH : usedSegmentsV;
+    for(const seg of segments){
+        if(isH){
+            if(y1===seg.y && !(x2<seg.x1 || x1>seg.x2)) return true;
+        } else {
+            if(x1===seg.x && !(y2<seg.y1 || y1>seg.y2)) return true;
+        }
+    }
+    return false;
+}
+
+// ---------- Add segment ----------
+function addSegment(x1,y1,x2,y2,isH){
+    if(isH) usedSegmentsH.push({x1, x2, y, y1:y1});
+    else usedSegmentsV.push({x, y1, y2, x1:x1});
+}
+
+// ---------- Connect nodes ----------
 function connectNodes(nodes){
+    usedSegmentsH.length=0;
+    usedSegmentsV.length=0;
     const drawn = new Set();
 
-    // First, ring connection
+    // First, ring to guarantee min 2
     for(let i=0;i<nodes.length;i++){
         const a=nodes[i], b=nodes[(i+1)%nodes.length];
-        const [sideA, sideB] = pickDifferentSides(a,b);
+        const [sideA, sideB]=pickDifferentSides(a,b);
         a.connections.push({target:b, side:sideA});
         b.connections.push({target:a, side:sideB});
         drawn.add([a.cam,b.cam].sort().join("-"));
     }
 
     // Extra connections for min/max
-    let attempts = 0;
+    let attempts=0;
     while(nodes.some(n=>n.connections.length<MAX_LINES) && attempts<2000){
         attempts++;
         const a=nodes[Math.floor(Math.random()*nodes.length)];
@@ -117,7 +165,8 @@ function connectNodes(nodes){
         if(a.connections.length>=MAX_LINES || b.connections.length>=MAX_LINES) continue;
         const key=[a.cam,b.cam].sort().join("-");
         if(drawn.has(key)) continue;
-        const [sideA, sideB] = pickDifferentSides(a,b);
+
+        const [sideA, sideB]=pickDifferentSides(a,b);
         a.connections.push({target:b, side:sideA});
         b.connections.push({target:a, side:sideB});
         drawn.add(key);
@@ -131,12 +180,12 @@ function connectNodes(nodes){
 function drawLines(nodes, connections){
     svg.innerHTML="";
     connections.forEach(key=>{
-        const [aName,bName] = key.split("-");
+        const [aName,bName]=key.split("-");
         const a=nodes.find(n=>n.cam===aName);
         const b=nodes.find(n=>n.cam===bName);
 
-        const connA = a.connections.find(c=>c.target===b);
-        const connB = b.connections.find(c=>c.target===a);
+        const connA=a.connections.find(c=>c.target===b);
+        const connB=b.connections.find(c=>c.target===a);
 
         let x1=a.x+BUTTON_SIZE/2, y1=a.y+BUTTON_SIZE/2;
         let x2=b.x+BUTTON_SIZE/2, y2=b.y+BUTTON_SIZE/2;
@@ -151,6 +200,7 @@ function drawLines(nodes, connections){
         if(connB.side==="left") x2=b.x;
         if(connB.side==="right") x2=b.x+BUTTON_SIZE;
 
+        // Horizontal then vertical
         const lineH=document.createElementNS(svgNS,"line");
         lineH.setAttribute("x1",x1);
         lineH.setAttribute("y1",y1);
