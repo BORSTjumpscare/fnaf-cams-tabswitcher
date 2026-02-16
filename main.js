@@ -10,10 +10,9 @@ toggleBtn.style.cursor = "pointer";
 toggleBtn.style.zIndex = "99999";
 document.body.appendChild(toggleBtn);
 
-// ---------- Black panel ----------
-const PANEL_SIZE = 260; // slightly bigger
+// ---------- Panel ----------
+const PANEL_SIZE = 280;
 const BUTTON_SIZE = 40;
-const SPACING = 15;
 
 const camPanel = document.createElement("div");
 camPanel.style.position = "fixed";
@@ -26,55 +25,76 @@ camPanel.style.border = "1px solid lime";
 camPanel.style.display = "none";
 camPanel.style.zIndex = "99998";
 camPanel.style.overflow = "hidden";
+camPanel.style.position = "fixed";
 document.body.appendChild(camPanel);
 
-// ---------- Camera list ----------
+// SVG layer for connection lines
+const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+svg.setAttribute("width", PANEL_SIZE);
+svg.setAttribute("height", PANEL_SIZE);
+svg.style.position = "absolute";
+svg.style.top = "0";
+svg.style.left = "0";
+svg.style.zIndex = "0";
+camPanel.appendChild(svg);
+
+// ---------- Cameras ----------
 const cams = [
   "cam1","cam2","cam3","cam4","cam5",
   "cam6","cam7","cam8","cam9","cam10"
 ];
 
-function shuffle(array) {
-  for (let i = array.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [array[i], array[j]] = [array[j], array[i]];
-  }
-  return array;
+function isOverlapping(x, y, positions) {
+  return positions.some(pos => {
+    return !(
+      x + BUTTON_SIZE + 10 < pos.x ||
+      x > pos.x + BUTTON_SIZE + 10 ||
+      y + BUTTON_SIZE + 10 < pos.y ||
+      y > pos.y + BUTTON_SIZE + 10
+    );
+  });
 }
 
 function createCamButtons() {
   camPanel.innerHTML = "";
+  camPanel.appendChild(svg);
+  svg.innerHTML = "";
 
-  // Create safe placement grid
   const positions = [];
-  const step = BUTTON_SIZE + SPACING;
+  const buttons = [];
 
-  for (let y = SPACING; y < PANEL_SIZE - BUTTON_SIZE; y += step) {
-    for (let x = SPACING; x < PANEL_SIZE - BUTTON_SIZE; x += step) {
-      positions.push({ x, y });
-    }
-  }
+  // Generate random non-overlapping positions
+  cams.forEach(cam => {
+    let x, y, attempts = 0;
 
-  shuffle(positions);
+    do {
+      x = Math.floor(Math.random() * (PANEL_SIZE - BUTTON_SIZE));
+      y = Math.floor(Math.random() * (PANEL_SIZE - BUTTON_SIZE));
+      attempts++;
+    } while (isOverlapping(x, y, positions) && attempts < 200);
 
-  cams.forEach((cam, index) => {
+    positions.push({ x, y, cam });
+  });
+
+  // Create buttons
+  positions.forEach(pos => {
     const btn = document.createElement("div");
-    btn.innerText = cam.toUpperCase();
+    btn.innerText = pos.cam.toUpperCase();
 
     btn.style.position = "absolute";
+    btn.style.left = pos.x + "px";
+    btn.style.top = pos.y + "px";
     btn.style.width = BUTTON_SIZE + "px";
     btn.style.height = BUTTON_SIZE + "px";
-    btn.style.left = positions[index].x + "px";
-    btn.style.top = positions[index].y + "px";
-
     btn.style.backgroundColor = "black";
     btn.style.border = "1px solid gray";
     btn.style.color = "gray";
     btn.style.display = "flex";
     btn.style.justifyContent = "center";
     btn.style.alignItems = "center";
-    btn.style.cursor = "pointer";
     btn.style.fontSize = "9px";
+    btn.style.cursor = "pointer";
+    btn.style.zIndex = "2";
     btn.style.userSelect = "none";
 
     // Hover
@@ -90,8 +110,8 @@ function createCamButtons() {
 
     // Left click
     btn.addEventListener("click", () => {
-      chrome.storage.local.get(cam, ({ [cam]: url }) => {
-        if (!url) return alert(`Set URL for ${cam}`);
+      chrome.storage.local.get(pos.cam, ({ [pos.cam]: url }) => {
+        if (!url) return alert(`Set URL for ${pos.cam}`);
         chrome.runtime.sendMessage({ action: "switchTab", url });
       });
     });
@@ -99,15 +119,33 @@ function createCamButtons() {
     // Right click
     btn.addEventListener("contextmenu", (e) => {
       e.preventDefault();
-      const newUrl = prompt(`Enter new URL for ${cam.toUpperCase()}`);
+      const newUrl = prompt(`Enter new URL for ${pos.cam.toUpperCase()}`);
       if (newUrl) {
-        chrome.storage.local.set({ [cam]: newUrl }, () =>
-          alert(`${cam.toUpperCase()} URL updated!`)
+        chrome.storage.local.set({ [pos.cam]: newUrl }, () =>
+          alert(`${pos.cam.toUpperCase()} URL updated!`)
         );
       }
     });
 
     camPanel.appendChild(btn);
+    buttons.push({ element: btn, ...pos });
+  });
+
+  // Randomly connect some cameras with grey lines
+  buttons.forEach(btn => {
+    if (Math.random() < 0.4) { // 40% chance to create a connection
+      const target = buttons[Math.floor(Math.random() * buttons.length)];
+      if (target !== btn) {
+        const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        line.setAttribute("x1", btn.x + BUTTON_SIZE / 2);
+        line.setAttribute("y1", btn.y + BUTTON_SIZE / 2);
+        line.setAttribute("x2", target.x + BUTTON_SIZE / 2);
+        line.setAttribute("y2", target.y + BUTTON_SIZE / 2);
+        line.setAttribute("stroke", "gray");
+        line.setAttribute("stroke-width", "1");
+        svg.appendChild(line);
+      }
+    }
   });
 }
 
@@ -124,7 +162,7 @@ toggleBtn.addEventListener("click", () => {
   panelVisible = !panelVisible;
 });
 
-// ---------- Optional default URLs ----------
+// ---------- Default URLs ----------
 chrome.storage.local.set({
   cam1: "https://www.google.com",
   cam2: "https://www.youtube.com",
