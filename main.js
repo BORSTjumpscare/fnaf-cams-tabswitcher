@@ -84,7 +84,6 @@ function generatePositions(){
         const idx=Math.floor(Math.random()*availableCells.length);
         const cell=availableCells.splice(idx,1)[0];
 
-        // Random offset within cell for “random” look
         const offsetX = Math.random()*(cellW-BUTTON_SIZE-10)+5;
         const offsetY = Math.random()*(cellH-BUTTON_SIZE-10)+5;
 
@@ -98,14 +97,16 @@ function generatePositions(){
     return nodes;
 }
 
-// ---------- Pick sides ----------
+// ---------- Utility: distance ----------
+function dist(a,b){return Math.hypot(a.x-b.x,a.y-b.y);}
+
+// ---------- Pick different sides ----------
 function pickDifferentSides(a,b){
     const sides=["top","bottom","left","right"];
     const availA = sides.filter(s=>!a.usedSides.has(s));
     const availB = sides.filter(s=>!b.usedSides.has(s));
     let sideA, sideB;
 
-    // Prefer horizontal if possible, else vertical
     if(availA.includes("right") && availB.includes("left")) { sideA="right"; sideB="left"; }
     else if(availA.includes("left") && availB.includes("right")) { sideA="left"; sideB="right"; }
     else if(availA.includes("top") && availB.includes("bottom")) { sideA="top"; sideB="bottom"; }
@@ -117,58 +118,75 @@ function pickDifferentSides(a,b){
     return [sideA,sideB];
 }
 
-// ---------- Track segments to prevent crossing ----------
+// ---------- Track used segments to prevent crossing ----------
 const usedSegmentsH = [];
 const usedSegmentsV = [];
 
-// ---------- Check segment crossing ----------
-function segmentCrosses(x1,y1,x2,y2,isH){
-    const segments = isH ? usedSegmentsH : usedSegmentsV;
-    for(const seg of segments){
-        if(isH){
-            if(y1===seg.y && !(x2<seg.x1 || x1>seg.x2)) return true;
-        } else {
-            if(x1===seg.x && !(y2<seg.y1 || y1>seg.y2)) return true;
-        }
-    }
-    return false;
+// ---------- Draw segment ----------
+function drawSegment(x1,y1,x2,y2){
+    const lineH=document.createElementNS(svgNS,"line");
+    lineH.setAttribute("x1",x1);
+    lineH.setAttribute("y1",y1);
+    lineH.setAttribute("x2",x2);
+    lineH.setAttribute("y2",y1);
+    lineH.setAttribute("stroke","gray");
+    lineH.setAttribute("stroke-width","2");
+    svg.appendChild(lineH);
+    usedSegmentsH.push({y:y1,x1:Math.min(x1,x2),x2:Math.max(x1,x2)});
+
+    const lineV=document.createElementNS(svgNS,"line");
+    lineV.setAttribute("x1",x2);
+    lineV.setAttribute("y1",y1);
+    lineV.setAttribute("x2",x2);
+    lineV.setAttribute("y2",y2);
+    lineV.setAttribute("stroke","gray");
+    lineV.setAttribute("stroke-width","2");
+    svg.appendChild(lineV);
+    usedSegmentsV.push({x:x2,y1:Math.min(y1,y2),y2:Math.max(y1,y2)});
 }
 
-// ---------- Add segment ----------
-function addSegment(x1,y1,x2,y2,isH){
-    if(isH) usedSegmentsH.push({x1, x2, y, y1:y1});
-    else usedSegmentsV.push({x, y1, y2, x1:x1});
-}
-
-// ---------- Connect nodes ----------
+// ---------- Connect nearest cams respecting min/max ----------
 function connectNodes(nodes){
     usedSegmentsH.length=0;
     usedSegmentsV.length=0;
     const drawn = new Set();
 
-    // First, ring to guarantee min 2
-    for(let i=0;i<nodes.length;i++){
-        const a=nodes[i], b=nodes[(i+1)%nodes.length];
-        const [sideA, sideB]=pickDifferentSides(a,b);
-        a.connections.push({target:b, side:sideA});
-        b.connections.push({target:a, side:sideB});
-        drawn.add([a.cam,b.cam].sort().join("-"));
-    }
+    // Build adjacency list sorted by distance
+    const neighbors=[];
+    nodes.forEach(a=>{
+        const dists=nodes.filter(n=>n!==a).map(b=>({b,d:dist(a,b)})).sort((x,y)=>x.d-y.d);
+        neighbors.push({a,dists});
+    });
 
-    // Extra connections for min/max
+    // Connect each node until min connections
+    neighbors.forEach(({a,dists})=>{
+        for(const {b} of dists){
+            if(a.connections.length>=MIN_LINES) break;
+            if(b.connections.length>=MAX_LINES) continue;
+            const key=[a.cam,b.cam].sort().join("-");
+            if(drawn.has(key)) continue;
+            const [sideA,sideB]=pickDifferentSides(a,b);
+            a.connections.push({target:b,side:sideA});
+            b.connections.push({target:a,side:sideB});
+            drawn.add(key);
+        }
+    });
+
+    // Extra connections up to MAX_LINES
     let attempts=0;
     while(nodes.some(n=>n.connections.length<MAX_LINES) && attempts<2000){
         attempts++;
         const a=nodes[Math.floor(Math.random()*nodes.length)];
-        const b=nodes[Math.floor(Math.random()*nodes.length)];
-        if(a===b) continue;
-        if(a.connections.length>=MAX_LINES || b.connections.length>=MAX_LINES) continue;
+        if(a.connections.length>=MAX_LINES) continue;
+        const dists=nodes.filter(n=>n!==a && n.connections.length<MAX_LINES)
+                         .map(b=>({b,d:dist(a,b)})).sort((x,y)=>x.d-y.d);
+        if(dists.length===0) break;
+        const b=dists[0].b;
         const key=[a.cam,b.cam].sort().join("-");
         if(drawn.has(key)) continue;
-
-        const [sideA, sideB]=pickDifferentSides(a,b);
-        a.connections.push({target:b, side:sideA});
-        b.connections.push({target:a, side:sideB});
+        const [sideA,sideB]=pickDifferentSides(a,b);
+        a.connections.push({target:b,side:sideA});
+        b.connections.push({target:a,side:sideB});
         drawn.add(key);
     }
 
@@ -176,8 +194,8 @@ function connectNodes(nodes){
     return drawn;
 }
 
-// ---------- Draw lines ----------
-function drawLines(nodes, connections){
+// ---------- Draw all connections ----------
+function drawLines(nodes,connections){
     svg.innerHTML="";
     connections.forEach(key=>{
         const [aName,bName]=key.split("-");
@@ -200,24 +218,7 @@ function drawLines(nodes, connections){
         if(connB.side==="left") x2=b.x;
         if(connB.side==="right") x2=b.x+BUTTON_SIZE;
 
-        // Horizontal then vertical
-        const lineH=document.createElementNS(svgNS,"line");
-        lineH.setAttribute("x1",x1);
-        lineH.setAttribute("y1",y1);
-        lineH.setAttribute("x2",x2);
-        lineH.setAttribute("y2",y1);
-        lineH.setAttribute("stroke","gray");
-        lineH.setAttribute("stroke-width","2");
-        svg.appendChild(lineH);
-
-        const lineV=document.createElementNS(svgNS,"line");
-        lineV.setAttribute("x1",x2);
-        lineV.setAttribute("y1",y1);
-        lineV.setAttribute("x2",x2);
-        lineV.setAttribute("y2",y2);
-        lineV.setAttribute("stroke","gray");
-        lineV.setAttribute("stroke-width","2");
-        svg.appendChild(lineV);
+        drawSegment(x1,y1,x2,y2);
     });
 }
 
@@ -227,8 +228,8 @@ function createCamButtons(){
     camPanel.appendChild(svg);
     camPanel.appendChild(lockBtn);
 
-    const nodes = generatePositions();
-    const connections = connectNodes(nodes);
+    const nodes=generatePositions();
+    const connections=connectNodes(nodes);
     drawLines(nodes,connections);
 
     nodes.forEach(node=>{
