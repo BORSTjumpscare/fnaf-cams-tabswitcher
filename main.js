@@ -13,7 +13,7 @@ document.body.appendChild(toggleBtn);
 // ---------- Panel ----------
 const PANEL_SIZE = 320;
 const BUTTON_SIZE = 40;
-const GRID_SIZE = 20;
+const GRID_SIZE = 40; // larger grid spacing for clean lines
 
 const camPanel = document.createElement("div");
 camPanel.style.position = "fixed";
@@ -47,8 +47,8 @@ function generatePositions() {
   cams.forEach(cam => {
     let x, y, tries = 0;
     do {
-      x = Math.floor(Math.random() * (PANEL_SIZE - BUTTON_SIZE) / GRID_SIZE) * GRID_SIZE;
-      y = Math.floor(Math.random() * (PANEL_SIZE - BUTTON_SIZE) / GRID_SIZE) * GRID_SIZE;
+      x = Math.floor(Math.random() * (PANEL_SIZE - BUTTON_SIZE) / GRID_SIZE) * GRID_SIZE + Math.random() * 10;
+      y = Math.floor(Math.random() * (PANEL_SIZE - BUTTON_SIZE) / GRID_SIZE) * GRID_SIZE + Math.random() * 10;
       tries++;
     } while (nodes.some(n => Math.hypot(n.x - x, n.y - y) < BUTTON_SIZE + 10) && tries < 300);
     nodes.push({ cam, x, y, connections: [] });
@@ -85,43 +85,65 @@ function connectNodes(nodes) {
   return drawn;
 }
 
-// ---------- Draw axis-aligned path avoiding crosses ----------
-function drawPathNoCross(a,b,usedH,usedV) {
-  const x1 = a.x + BUTTON_SIZE/2;
-  const y1 = a.y + BUTTON_SIZE/2;
-  const x2 = b.x + BUTTON_SIZE/2;
-  const y2 = b.y + BUTTON_SIZE/2;
+// ---------- Draw Manhattan lines strictly horizontal/vertical ----------
+function drawManhattanLine(a,b,usedH,usedV) {
+  const x1 = Math.round(a.x + BUTTON_SIZE/2);
+  const y1 = Math.round(a.y + BUTTON_SIZE/2);
+  const x2 = Math.round(b.x + BUTTON_SIZE/2);
+  const y2 = Math.round(b.y + BUTTON_SIZE/2);
 
-  // Simple Manhattan routing with optional zigzag if segments occupied
   const points = [{x:x1,y:y1}];
 
-  let midX = x2, midY = y1; // default L-shape
-  // Check horizontal segment
-  let hKey = `H:${Math.min(x1,midX)}-${y1}-${Math.max(x1,midX)}`;
-  if (usedH.has(hKey)) midY += GRID_SIZE; // offset vertical
-  usedH.add(hKey);
-  points.push({x:midX,y:midY});
+  // Decide vertical or horizontal first randomly
+  const verticalFirst = Math.random() < 0.5;
 
-  // Vertical segment
-  let vKey = `V:${midX}-${Math.min(midY,y2)}-${Math.max(midY,y2)}`;
-  if (usedV.has(vKey)) midX += GRID_SIZE; // offset horizontal
-  usedV.add(vKey);
-  points.push({x:x2,y:y2});
+  if(verticalFirst){
+    // Vertical segment
+    const midY = y2;
+    let vKey = `V:${x1}-${Math.min(y1,midY)}-${Math.max(y1,midY)}`;
+    let offsetX = 0;
+    if(usedV.has(vKey)) offsetX += GRID_SIZE/2; // shift if occupied
+    usedV.add(`V:${x1+offsetX}-${Math.min(y1,midY)}-${Math.max(y1,midY)}`);
+    points.push({x:x1+offsetX,y:midY});
+
+    // Horizontal to target
+    const hKey = `H:${Math.min(x1+offsetX,x2)}-${y2}-${Math.max(x1+offsetX,x2)}`;
+    let offsetY = 0;
+    if(usedH.has(hKey)) offsetY += GRID_SIZE/2;
+    usedH.add(`H:${Math.min(x1+offsetX,x2)}-${y2+offsetY}-${Math.max(x1+offsetX,x2)}`);
+    points.push({x:x2,y:y2+offsetY});
+
+  } else {
+    // Horizontal segment
+    const midX = x2;
+    let hKey = `H:${Math.min(x1,midX)}-${y1}-${Math.max(x1,midX)}`;
+    let offsetY = 0;
+    if(usedH.has(hKey)) offsetY += GRID_SIZE/2;
+    usedH.add(`H:${Math.min(x1,midX)}-${y1+offsetY}-${Math.max(x1,midX)}`);
+    points.push({x:midX,y:y1+offsetY});
+
+    // Vertical to target
+    const vKey = `V:${x2}-${Math.min(y1+offsetY,y2)}-${Math.max(y1+offsetY,y2)}`;
+    let offsetX = 0;
+    if(usedV.has(vKey)) offsetX += GRID_SIZE/2;
+    usedV.add(`V:${x2+offsetX}-${Math.min(y1+offsetY,y2)}-${Math.max(y1+offsetY,y2)}`);
+    points.push({x:x2+offsetX,y:y2});
+  }
 
   // Draw lines
-  for (let i=0;i<points.length-1;i++){
-    const line = document.createElementNS("http://www.w3.org/2000/svg","line");
+  for(let i=0;i<points.length-1;i++){
+    const line=document.createElementNS("http://www.w3.org/2000/svg","line");
     line.setAttribute("x1",points[i].x);
     line.setAttribute("y1",points[i].y);
     line.setAttribute("x2",points[i+1].x);
     line.setAttribute("y2",points[i+1].y);
     line.setAttribute("stroke","gray");
-    line.setAttribute("stroke-width","1");
+    line.setAttribute("stroke-width","2");
     svg.appendChild(line);
   }
 }
 
-// ---------- Create cams and draw network ----------
+// ---------- Create cams and network ----------
 function createCamButtons() {
   camPanel.innerHTML="";
   camPanel.appendChild(svg);
@@ -136,7 +158,7 @@ function createCamButtons() {
     node.connections.forEach(target=>{
       const key=[node.cam,target.cam].sort().join("-");
       if(!drawn.has(key)) return;
-      drawPathNoCross(node,target,usedH,usedV);
+      drawManhattanLine(node,target,usedH,usedV);
       drawn.delete(key);
     });
   });
