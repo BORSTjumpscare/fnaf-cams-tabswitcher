@@ -37,37 +37,122 @@ svg.style.left = "0";
 svg.style.zIndex = "0";
 camPanel.appendChild(svg);
 
-// Cameras
-const cams = ["cam1","cam2","cam3","cam4","cam5","cam6","cam7","cam8","cam9","cam10"];
+// ---------- Cameras ----------
+const cams = [
+  "cam1","cam2","cam3","cam4","cam5",
+  "cam6","cam7","cam8","cam9","cam10"
+];
 
+function isOverlapping(x, y, nodes) {
+  return nodes.some(n => Math.hypot(n.x - x, n.y - y) < BUTTON_SIZE + 10);
+}
+
+// Generate random non-overlapping positions
+function generatePositions() {
+  const nodes = [];
+  cams.forEach(cam => {
+    let x, y, tries = 0;
+    do {
+      x = Math.random() * (PANEL_SIZE - BUTTON_SIZE);
+      y = Math.random() * (PANEL_SIZE - BUTTON_SIZE);
+      tries++;
+    } while (isOverlapping(x, y, nodes) && tries < 300);
+    nodes.push({ cam, x, y, connections: [] });
+  });
+  return nodes;
+}
+
+// ---------- Connect nodes fully ----------
+function connectNodes(nodes) {
+  const drawn = new Set();
+
+  // Step 1: Make a ring (ensures full closed shape)
+  for (let i = 0; i < nodes.length; i++) {
+    const a = nodes[i];
+    const b = nodes[(i + 1) % nodes.length];
+    a.connections.push(b);
+    b.connections.push(a);
+    drawn.add([a.cam, b.cam].sort().join("-"));
+  }
+
+  // Step 2: Ensure each node has at least 2 connections (add extra if needed)
+  nodes.forEach(node => {
+    while (node.connections.length < 2) {
+      const target = nodes[Math.floor(Math.random() * nodes.length)];
+      const key = [node.cam, target.cam].sort().join("-");
+      if (target !== node && !node.connections.includes(target) && !drawn.has(key)) {
+        node.connections.push(target);
+        target.connections.push(node);
+        drawn.add(key);
+      }
+    }
+  });
+
+  return drawn;
+}
+
+// ---------- Draw orthogonal line with optional multiple corners ----------
+function drawPath(a, b) {
+  const x1 = a.x + BUTTON_SIZE / 2;
+  const y1 = a.y + BUTTON_SIZE / 2;
+  const x2 = b.x + BUTTON_SIZE / 2;
+  const y2 = b.y + BUTTON_SIZE / 2;
+
+  // Decide number of segments (1-3)
+  const segments = Math.floor(Math.random() * 3) + 1;
+  let points = [{ x: x1, y: y1 }];
+
+  if (segments === 1) {
+    points.push({ x: x2, y: y1 });
+    points.push({ x: x2, y: y2 });
+  } else if (segments === 2) {
+    const midX = x1 + (x2 - x1) * Math.random();
+    points.push({ x: midX, y: y1 });
+    points.push({ x: midX, y: y2 });
+    points.push({ x: x2, y: y2 });
+  } else { // 3 segments
+    const midX1 = x1 + (x2 - x1) * 0.3;
+    const midY1 = y1 + (y2 - y1) * 0.3;
+    const midX2 = x1 + (x2 - x1) * 0.7;
+    points.push({ x: midX1, y: y1 });
+    points.push({ x: midX1, y: midY1 });
+    points.push({ x: midX2, y: midY1 });
+    points.push({ x: midX2, y: y2 });
+    points.push({ x: x2, y: y2 });
+  }
+
+  for (let i = 0; i < points.length - 1; i++) {
+    const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+    line.setAttribute("x1", points[i].x);
+    line.setAttribute("y1", points[i].y);
+    line.setAttribute("x2", points[i + 1].x);
+    line.setAttribute("y2", points[i + 1].y);
+    line.setAttribute("stroke", "gray");
+    line.setAttribute("stroke-width", "1");
+    svg.appendChild(line);
+  }
+}
+
+// ---------- Create cam buttons and draw network ----------
 function createCamButtons() {
   camPanel.innerHTML = "";
   camPanel.appendChild(svg);
   svg.innerHTML = "";
 
-  const nodes = [];
+  const nodes = generatePositions();
+  const drawn = connectNodes(nodes);
 
-  // ---------- Create main hallway ----------
-  const mainY = PANEL_SIZE / 2 - BUTTON_SIZE / 2;
-  let x = 20;
-  cams.slice(0, 5).forEach(cam => {
-    nodes.push({ cam, x, y: mainY, connections: [] });
-    x += BUTTON_SIZE + 40;
+  // Draw connections
+  nodes.forEach(node => {
+    node.connections.forEach(target => {
+      const key = [node.cam, target.cam].sort().join("-");
+      if (!drawn.has(key)) return;
+      drawPath(node, target);
+      drawn.delete(key); // prevent duplicate
+    });
   });
 
-  // ---------- Add vertical side rooms ----------
-  cams.slice(5).forEach(cam => {
-    const parent = nodes[Math.floor(Math.random() * 5)]; // connect to main hallway
-    const direction = Math.random() < 0.5 ? -1 : 1; // above or below
-    const offsetY = direction * (BUTTON_SIZE + 30);
-    const offsetX = (Math.random() - 0.5) * 20; // slight x variation
-    const x = parent.x + offsetX;
-    const y = parent.y + offsetY;
-    nodes.push({ cam, x, y, connections: [parent] });
-    parent.connections.push({ cam, x, y }); // back connection
-  });
-
-  // ---------- Draw buttons ----------
+  // Create buttons
   nodes.forEach(node => {
     const btn = document.createElement("div");
     btn.innerText = node.cam.toUpperCase();
@@ -90,7 +175,6 @@ function createCamButtons() {
       btn.style.border = "1px solid lime";
       btn.style.color = "lime";
     });
-
     btn.addEventListener("mouseleave", () => {
       btn.style.border = "1px solid gray";
       btn.style.color = "gray";
@@ -114,41 +198,6 @@ function createCamButtons() {
     camPanel.appendChild(btn);
     node.element = btn;
   });
-
-  // ---------- Draw L-shaped lines ----------
-  nodes.forEach(node => {
-    node.connections.forEach(target => {
-      drawLLine(node, target);
-    });
-  });
-}
-
-// ---------- Draw L-shaped lines ----------
-function drawLLine(a, b) {
-  const x1 = a.x + BUTTON_SIZE / 2;
-  const y1 = a.y + BUTTON_SIZE / 2;
-  const x2 = b.x + BUTTON_SIZE / 2;
-  const y2 = b.y + BUTTON_SIZE / 2;
-
-  // Horizontal then vertical
-  const line1 = document.createElementNS("http://www.w3.org/2000/svg", "line");
-  line1.setAttribute("x1", x1);
-  line1.setAttribute("y1", y1);
-  line1.setAttribute("x2", x2);
-  line1.setAttribute("y2", y1);
-  line1.setAttribute("stroke", "gray");
-  line1.setAttribute("stroke-width", "1");
-
-  const line2 = document.createElementNS("http://www.w3.org/2000/svg", "line");
-  line2.setAttribute("x1", x2);
-  line2.setAttribute("y1", y1);
-  line2.setAttribute("x2", x2);
-  line2.setAttribute("y2", y2);
-  line2.setAttribute("stroke", "gray");
-  line2.setAttribute("stroke-width", "1");
-
-  svg.appendChild(line1);
-  svg.appendChild(line2);
 }
 
 // ---------- Toggle panel ----------
