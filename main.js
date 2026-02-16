@@ -22,44 +22,55 @@ let camURLs = [
     "https://bing.com"
 ];
 
+let field, lockBtn, toggleBtn;
+
 // --------------------
-// UI
+// Create UI
 // --------------------
 function createUI() {
-    const field = document.createElement("div");
+    // Only create field once
+    field = document.createElement("div");
     field.id = "cam-field";
     field.style.position = "fixed";
     field.style.bottom = "15px";
     field.style.right = "75px";
     field.style.width = FIELD_SIZE + "px";
     field.style.height = FIELD_SIZE + "px";
-    field.style.background = "transparent"; // allow rest of screen click
+    field.style.background = "rgba(0,0,0,0.6)";
     field.style.border = "2px solid white";
     field.style.display = "none";
     field.style.zIndex = "999999";
-    field.style.pointerEvents = "none"; // make background transparent to clicks
+    field.style.pointerEvents = "none"; // allow clicks through field
+    field.style.overflow = "visible";
     document.body.appendChild(field);
 
-    const toggle = document.createElement("img");
-    toggle.src = chrome.runtime.getURL("cam-button.png");
-    toggle.style.position = "fixed";
-    toggle.style.bottom = "15px";
-    toggle.style.right = "15px";
-    toggle.style.width = "50px";
-    toggle.style.cursor = "pointer";
-    toggle.style.zIndex = "1000000";
-    document.body.appendChild(toggle);
+    // Toggle button
+    toggleBtn = document.createElement("img");
+    toggleBtn.src = chrome.runtime.getURL("cam-button.png");
+    toggleBtn.style.position = "fixed";
+    toggleBtn.style.bottom = "15px";
+    toggleBtn.style.right = "15px";
+    toggleBtn.style.width = "50px";
+    toggleBtn.style.cursor = "pointer";
+    toggleBtn.style.zIndex = "1000000";
+    document.body.appendChild(toggleBtn);
 
-    toggle.onclick = () => {
-        field.style.display = field.style.display === "none" ? "block" : "none";
-        if (!locked) generateMap(field);
+    toggleBtn.onclick = () => {
+        if (field.style.display === "none") {
+            field.style.display = "block";
+            if (!locked) generateMap();
+        } else {
+            field.style.display = "none";
+        }
     };
 
-    const lockBtn = document.createElement("button");
+    // Lock button inside field
+    lockBtn = document.createElement("button");
     lockBtn.innerText = "LOCK";
     lockBtn.style.position = "absolute";
     lockBtn.style.top = "5px";
     lockBtn.style.left = "5px";
+    lockBtn.style.pointerEvents = "auto"; // clickable
     lockBtn.onclick = () => {
         locked = !locked;
         lockBtn.innerText = locked ? "LOCKED" : "LOCK";
@@ -70,7 +81,8 @@ function createUI() {
 // --------------------
 // Generate map
 // --------------------
-function generateMap(field) {
+function generateMap() {
+    // Remove previous cams and lines
     field.querySelectorAll(".cam").forEach(e => e.remove());
     field.querySelectorAll(".line").forEach(e => e.remove());
     cams = [];
@@ -78,8 +90,8 @@ function generateMap(field) {
 
     generateCams();
     createFullClosedLoop();
-    drawLines(field);
-    drawCams(field);
+    drawLines();
+    drawCams();
 }
 
 // --------------------
@@ -99,7 +111,7 @@ function generateCams() {
 // --------------------
 // Draw cams
 // --------------------
-function drawCams(field) {
+function drawCams() {
     cams.forEach(cam => {
         const btn = document.createElement("div");
         btn.className = "cam";
@@ -119,7 +131,7 @@ function drawCams(field) {
         btn.style.userSelect = "none";
         btn.style.cursor = "pointer";
         btn.style.zIndex = "10";
-        btn.style.pointerEvents = "auto"; // allow clicking only buttons
+        btn.style.pointerEvents = "auto"; // only buttons clickable
 
         btn.onmouseenter = () => btn.style.borderColor = "lime";
         btn.onmouseleave = () => btn.style.borderColor = "white";
@@ -137,7 +149,7 @@ function drawCams(field) {
 }
 
 // --------------------
-// Full closed loop with corners
+// Closed loop
 // --------------------
 function createFullClosedLoop() {
     for (let i = 0; i < CAM_COUNT; i++) {
@@ -160,7 +172,7 @@ function createFullClosedLoop() {
 }
 
 // --------------------
-// Connect two cams
+// Connect cams
 // --------------------
 function connectTwo(a, b) {
     if (a.connections >= MAX_LINES || b.connections >= MAX_LINES) return;
@@ -172,7 +184,7 @@ function connectTwo(a, b) {
     let start = getSidePointEdge(a, sideA);
     let end = getSidePointEdge(b, sideB);
 
-    // L-shaped corner, horizontal then vertical
+    // L-corner: horizontal then vertical
     let corner = { x: start.x, y: end.y };
 
     let segs = [
@@ -224,13 +236,14 @@ function rangesOverlap(a1, a2, b1, b2) {
 // --------------------
 // Draw lines under cams
 // --------------------
-function drawLines(field) {
+function drawLines() {
     lines.forEach(s => {
         const line = document.createElement("div");
         line.className = "line";
         line.style.position = "absolute";
         line.style.background = "gray";
         line.style.zIndex = "1";
+        line.style.pointerEvents = "none"; // lines not clickable
 
         if (s.x1 === s.x2) {
             line.style.left = s.x1 + "px";
