@@ -5,11 +5,15 @@ const CAM_COUNT = 10;
 const FIELD_SIZE = 420;
 const BUTTON_SIZE = 36;
 const MIN_DISTANCE = 110;
+const MAX_LINES = 2;
 
 let cams = [];
 let lines = [];
 const sides = ["top", "right", "bottom", "left"];
 
+// --------------------
+// UI Setup
+// --------------------
 function createUI() {
     const field = document.createElement("div");
     field.id = "cam-field";
@@ -36,12 +40,10 @@ function createUI() {
     document.body.appendChild(toggle);
 
     toggle.onclick = () => {
-        field.style.display =
-            field.style.display === "none" ? "block" : "none";
+        field.style.display = field.style.display === "none" ? "block" : "none";
 
-        if (!locked && !generated) {
+        if (!locked) {
             generateMap(field);
-            generated = true;
         }
     };
 
@@ -57,6 +59,9 @@ function createUI() {
     field.appendChild(lockBtn);
 }
 
+// --------------------
+// Map Generation
+// --------------------
 function generateMap(field) {
     field.querySelectorAll(".cam").forEach(e => e.remove());
     field.querySelectorAll(".line").forEach(e => e.remove());
@@ -65,10 +70,14 @@ function generateMap(field) {
     lines = [];
 
     generateCams();
-    createCamButtons(field);
     createClosedLoop(field);
+    drawLines(field);  // first draw lines
+    drawCams(field);   // then draw cams on top
 }
 
+// --------------------
+// Generate random cams
+// --------------------
 function generateCams() {
     while (cams.length < CAM_COUNT) {
         let x = Math.random() * (FIELD_SIZE - 60) + 20;
@@ -86,7 +95,10 @@ function generateCams() {
     }
 }
 
-function createCamButtons(field) {
+// --------------------
+// Draw cam buttons
+// --------------------
+function drawCams(field) {
     cams.forEach(cam => {
         const btn = document.createElement("div");
         btn.className = "cam";
@@ -104,6 +116,7 @@ function createCamButtons(field) {
         btn.style.justifyContent = "center";
         btn.style.userSelect = "none";
         btn.style.cursor = "pointer";
+        btn.style.zIndex = "10"; // ON TOP OF LINES
 
         btn.onmouseenter = () => btn.style.borderColor = "lime";
         btn.onmouseleave = () => btn.style.borderColor = "white";
@@ -113,73 +126,65 @@ function createCamButtons(field) {
 }
 
 // --------------------
-// Closed Loop Algorithm
+// Closed Loop Creation
 // --------------------
 function createClosedLoop(field) {
-    let attempts = 0;
-    let success = false;
+    let shuffled = [...cams].sort(() => Math.random() - 0.5);
 
-    while (!success && attempts < 2000) {
-        attempts++;
-
-        // Reset
-        cams.forEach(c => {
-            c.connections = 0;
-            c.usedSides = [];
-        });
-        lines = [];
-
-        // Shuffle for randomness
-        let shuffled = [...cams].sort(() => Math.random() - 0.5);
-
-        // Step 1: Create initial spanning loop
-        for (let i = 0; i < CAM_COUNT; i++) {
-            let a = shuffled[i];
-            let b = shuffled[(i + 1) % CAM_COUNT]; // wrap around
-            if (!connectTwo(a, b, field)) break;
-        }
-
-        // Step 2: Add extra connections to reach exactly 2 per cam
-        let finished = cams.every(c => c.connections === 2);
-        if (finished) success = true;
+    // Step 1: Create initial loop (wrap around)
+    for (let i = 0; i < CAM_COUNT; i++) {
+        let a = shuffled[i];
+        let b = shuffled[(i + 1) % CAM_COUNT];
+        connectTwo(a, b);
     }
 
-    if (!success) console.warn("Failed to generate stable loop");
+    // Step 2: Fill remaining connections to reach exactly 2 per cam
+    let attempts = 0;
+    while (cams.some(c => c.connections < MAX_LINES) && attempts < 1000) {
+        attempts++;
+        for (let a of cams) {
+            if (a.connections >= MAX_LINES) continue;
+            let b = findNearestAvailable(a);
+            if (b) connectTwo(a, b);
+        }
+    }
 }
 
-function connectTwo(a, b, field) {
-    if (a.connections >= 2 || b.connections >= 2) return false;
+// --------------------
+// Connect two cams with L-shaped line
+// --------------------
+function connectTwo(a, b) {
+    if (a.connections >= MAX_LINES || b.connections >= MAX_LINES) return;
 
     let sideA = getFreeSide(a);
     let sideB = getFreeSide(b);
-    if (!sideA || !sideB) return false;
+    if (!sideA || !sideB) return;
 
     let start = getSidePoint(a, sideA);
     let end = getSidePoint(b, sideB);
 
-    // L-shaped path
-    let mid = { x: start.x, y: end.y };
+    // Create true L-shaped corner: randomize bend direction
+    let corner = Math.random() > 0.5
+        ? { x: start.x, y: end.y }
+        : { x: end.x, y: start.y };
 
-    let segments = [
-        { x1: start.x, y1: start.y, x2: mid.x, y2: mid.y },
-        { x1: mid.x, y1: mid.y, x2: end.x, y2: end.y }
+    let segs = [
+        { x1: start.x, y1: start.y, x2: corner.x, y2: corner.y },
+        { x1: corner.x, y1: corner.y, x2: end.x, y2: end.y }
     ];
 
-    if (intersects(segments)) return false;
+    if (intersects(segs)) return;
 
-    drawSegments(segments, field);
-    lines.push(...segments);
+    lines.push(...segs);
 
     a.connections++;
     b.connections++;
     a.usedSides.push(sideA);
     b.usedSides.push(sideB);
-
-    return true;
 }
 
 // --------------------
-// Utility Functions
+// Helper Functions
 // --------------------
 function getFreeSide(cam) {
     return sides.find(s => !cam.usedSides.includes(s));
@@ -194,39 +199,45 @@ function getSidePoint(cam, side) {
     if (side === "right") return { x: cam.x + BUTTON_SIZE, y: cy };
 }
 
-function intersects(newSegs) {
-    for (let seg of newSegs) {
-        for (let line of lines) {
-            if (segmentOverlap(seg, line)) return true;
+function findNearestAvailable(cam) {
+    return cams
+        .filter(c => c.id !== cam.id && c.connections < MAX_LINES)
+        .sort((a, b) => Math.hypot(cam.x - a.x, cam.y - a.y) - Math.hypot(cam.x - b.x, cam.y - b.y))[0];
+}
+
+function intersects(segs) {
+    for (let s of segs) {
+        for (let l of lines) {
+            if (segmentOverlap(s, l)) return true;
         }
     }
     return false;
 }
 
 function segmentOverlap(a, b) {
-    if (a.x1 === a.x2 && b.x1 === b.x2 && a.x1 === b.x1) {
+    if (a.x1 === a.x2 && b.x1 === b.x2 && a.x1 === b.x1)
         return rangesOverlap(a.y1, a.y2, b.y1, b.y2);
-    }
-    if (a.y1 === a.y2 && b.y1 === b.y2 && a.y1 === b.y1) {
+    if (a.y1 === a.y2 && b.y1 === b.y2 && a.y1 === b.y1)
         return rangesOverlap(a.x1, a.x2, b.x1, b.x2);
-    }
     return false;
 }
 
 function rangesOverlap(a1, a2, b1, b2) {
-    let minA = Math.min(a1, a2);
-    let maxA = Math.max(a1, a2);
-    let minB = Math.min(b1, b2);
-    let maxB = Math.max(b1, b2);
+    let minA = Math.min(a1, a2), maxA = Math.max(a1, a2);
+    let minB = Math.min(b1, b2), maxB = Math.max(b1, b2);
     return maxA >= minB && maxB >= minA;
 }
 
-function drawSegments(segs, field) {
-    segs.forEach(s => {
+// --------------------
+// Draw lines first
+// --------------------
+function drawLines(field) {
+    lines.forEach(s => {
         const line = document.createElement("div");
         line.className = "line";
         line.style.position = "absolute";
         line.style.background = "gray";
+        line.style.zIndex = "1";
 
         if (s.x1 === s.x2) {
             line.style.left = s.x1 + "px";
