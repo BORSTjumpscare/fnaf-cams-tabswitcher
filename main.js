@@ -7,7 +7,6 @@ const MAX_LINES = 2;
 
 let cams = [];
 let lines = [];
-
 const sides = ["top", "right", "bottom", "left"];
 
 // URLs for each cam
@@ -80,18 +79,18 @@ function generateMap(field) {
     lines = [];
 
     generateCams();
-    createClosedLoop();
+    createFullClosedLoop();
     drawLines(field);
-    drawCams(field); // cams on top
+    drawCams(field);
 }
 
 // --------------------
-// Generate cams randomly with spacing
+// Generate cams randomly
 // --------------------
 function generateCams() {
     while (cams.length < CAM_COUNT) {
-        let x = Math.random() * (FIELD_SIZE - 60) + 20;
-        let y = Math.random() * (FIELD_SIZE - 60) + 20;
+        let x = Math.random() * (FIELD_SIZE - BUTTON_SIZE * 2) + BUTTON_SIZE;
+        let y = Math.random() * (FIELD_SIZE - BUTTON_SIZE * 2) + BUTTON_SIZE;
 
         if (cams.every(c => Math.hypot(c.x - x, c.y - y) > MIN_DISTANCE)) {
             cams.push({
@@ -150,32 +149,38 @@ function drawCams(field) {
         field.appendChild(btn);
     });
 }
-// --------------------
-// Closed loop generation with nearest neighbor
-// --------------------
-function createClosedLoop() {
-    let camsCopy = [...cams].sort(() => Math.random() - 0.5);
 
-    // Step 1: connect nearest neighbors first
-    for (let cam of camsCopy) {
-        while (cam.connections < MAX_LINES) {
-            let target = findNearestAvailable(cam);
-            if (!target) break;
-            connectTwo(cam, target);
-        }
+// --------------------
+// Create full closed loop
+// --------------------
+function createFullClosedLoop() {
+    let available = [...cams];
+
+    // First, connect nearest neighbors in a loop
+    for (let i = 0; i < CAM_COUNT; i++) {
+        let a = cams[i];
+        let b = cams[(i + 1) % CAM_COUNT];
+        connectTwo(a, b);
     }
 
-    // Step 2: ensure a closed loop (wrap-around)
-    cams.forEach((cam, i) => {
-        let next = cams[(i + 1) % CAM_COUNT];
-        if (cam.connections < MAX_LINES && next.connections < MAX_LINES) {
-            connectTwo(cam, next);
+    // Then, fill remaining lines to reach MAX_LINES per cam
+    let done = false;
+    while (!done) {
+        done = true;
+        for (let cam of cams) {
+            if (cam.connections < MAX_LINES) {
+                let target = findNearestAvailable(cam);
+                if (target) {
+                    connectTwo(cam, target);
+                    done = false;
+                }
+            }
         }
-    });
+    }
 }
 
 // --------------------
-// Connect two cams with proper corners
+// Connect two cams with corners, outside button
 // --------------------
 function connectTwo(a, b) {
     if (a.connections >= MAX_LINES || b.connections >= MAX_LINES) return;
@@ -184,13 +189,11 @@ function connectTwo(a, b) {
     let sideB = getFreeSide(b);
     if (!sideA || !sideB) return;
 
-    let start = getSidePoint(a, sideA);
-    let end = getSidePoint(b, sideB);
+    let start = getSidePointOutside(a, sideA);
+    let end = getSidePointOutside(b, sideB);
 
-    // L-shaped corner (random orientation)
-    let corner = Math.random() > 0.5
-        ? { x: start.x, y: end.y }
-        : { x: end.x, y: start.y };
+    // L-shaped corner
+    let corner = Math.random() > 0.5 ? { x: start.x, y: end.y } : { x: end.x, y: start.y };
 
     let segs = [
         { x1: start.x, y1: start.y, x2: corner.x, y2: corner.y },
@@ -210,13 +213,14 @@ function connectTwo(a, b) {
 // Helpers
 // --------------------
 function getFreeSide(cam) { return sides.find(s => !cam.usedSides.includes(s)); }
-function getSidePoint(cam, side) {
+function getSidePointOutside(cam, side) {
     let cx = cam.x + BUTTON_SIZE / 2;
     let cy = cam.y + BUTTON_SIZE / 2;
-    if (side === "top") return { x: cx, y: cam.y };
-    if (side === "bottom") return { x: cx, y: cam.y + BUTTON_SIZE };
-    if (side === "left") return { x: cam.x, y: cy };
-    if (side === "right") return { x: cam.x + BUTTON_SIZE, y: cy };
+    let offset = 3;
+    if (side === "top") return { x: cx, y: cam.y - offset };
+    if (side === "bottom") return { x: cx, y: cam.y + BUTTON_SIZE + offset };
+    if (side === "left") return { x: cam.x - offset, y: cy };
+    if (side === "right") return { x: cam.x + BUTTON_SIZE + offset, y: cy };
 }
 function findNearestAvailable(cam) {
     return cams
