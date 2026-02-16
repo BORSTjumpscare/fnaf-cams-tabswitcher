@@ -31,7 +31,7 @@ function createUI() {
     field.id = "cam-field";
     field.style.position = "fixed";
     field.style.bottom = "15px";
-    field.style.right = "15px";
+    field.style.right = "75px"; // shifted right so toggle button is clickable
     field.style.width = FIELD_SIZE + "px";
     field.style.height = FIELD_SIZE + "px";
     field.style.background = "black";
@@ -117,7 +117,8 @@ function drawCams(field) {
         btn.style.top = cam.y + "px";
         btn.style.width = BUTTON_SIZE + "px";
         btn.style.height = BUTTON_SIZE + "px";
-        btn.style.border = "2px solid white";
+        btn.style.background = "black"; // filled square
+        btn.style.border = "2px solid white"; // outline color
         btn.style.color = "white";
         btn.style.fontSize = "10px";
         btn.style.display = "flex";
@@ -127,6 +128,7 @@ function drawCams(field) {
         btn.style.cursor = "pointer";
         btn.style.zIndex = "10";
 
+        // hover: outline turns lime
         btn.onmouseenter = () => btn.style.borderColor = "lime";
         btn.onmouseleave = () => btn.style.borderColor = "white";
 
@@ -154,16 +156,14 @@ function drawCams(field) {
 // Create full closed loop
 // --------------------
 function createFullClosedLoop() {
-    let available = [...cams];
-
-    // First, connect nearest neighbors in a loop
+    // first connect in loop
     for (let i = 0; i < CAM_COUNT; i++) {
         let a = cams[i];
         let b = cams[(i + 1) % CAM_COUNT];
         connectTwo(a, b);
     }
 
-    // Then, fill remaining lines to reach MAX_LINES per cam
+    // then fill remaining connections to max lines per cam
     let done = false;
     while (!done) {
         done = true;
@@ -180,7 +180,7 @@ function createFullClosedLoop() {
 }
 
 // --------------------
-// Connect two cams with corners, outside button
+// Connect two cams with L-shaped corners outside button
 // --------------------
 function connectTwo(a, b) {
     if (a.connections >= MAX_LINES || b.connections >= MAX_LINES) return;
@@ -216,7 +216,7 @@ function getFreeSide(cam) { return sides.find(s => !cam.usedSides.includes(s)); 
 function getSidePointOutside(cam, side) {
     let cx = cam.x + BUTTON_SIZE / 2;
     let cy = cam.y + BUTTON_SIZE / 2;
-    let offset = 3;
+    let offset = 3; // stop outside button
     if (side === "top") return { x: cx, y: cam.y - offset };
     if (side === "bottom") return { x: cx, y: cam.y + BUTTON_SIZE + offset };
     if (side === "left") return { x: cam.x - offset, y: cy };
