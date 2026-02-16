@@ -1,294 +1,276 @@
-// ---------- Toggle Button ----------
-const toggleBtn = document.createElement("img");
-toggleBtn.src = chrome.runtime.getURL("cam-button.png");
-toggleBtn.style.position = "fixed";
-toggleBtn.style.bottom = "10px";
-toggleBtn.style.right = "10px";
-toggleBtn.style.width = "50px";
-toggleBtn.style.height = "50px";
-toggleBtn.style.cursor = "pointer";
-toggleBtn.style.zIndex = "99999";
-document.body.appendChild(toggleBtn);
-
-// ---------- Panel ----------
-const PANEL_SIZE = 320;
-const BUTTON_SIZE = 40;
-const camPanel = document.createElement("div");
-camPanel.style.position = "fixed";
-camPanel.style.bottom = "70px";
-camPanel.style.right = "10px";
-camPanel.style.width = PANEL_SIZE + "px";
-camPanel.style.height = PANEL_SIZE + "px";
-camPanel.style.backgroundColor = "black";
-camPanel.style.border = "1px solid lime";
-camPanel.style.display = "none";
-camPanel.style.zIndex = "99998";
-camPanel.style.overflow = "hidden";
-document.body.appendChild(camPanel);
-
-const svgNS = "http://www.w3.org/2000/svg";
-const svg = document.createElementNS(svgNS,"svg");
-svg.setAttribute("width",PANEL_SIZE);
-svg.setAttribute("height",PANEL_SIZE);
-svg.style.position = "absolute";
-svg.style.top = "0";
-svg.style.left = "0";
-svg.style.zIndex = "0";
-camPanel.appendChild(svg);
-
-// ---------- Lock Button ----------
 let locked = false;
-const lockBtn = document.createElement("button");
-lockBtn.innerText = "LOCK";
-lockBtn.style.position = "absolute";
-lockBtn.style.top = "5px";
-lockBtn.style.right = "5px";
-lockBtn.style.zIndex = "100";
-lockBtn.style.cursor = "pointer";
-lockBtn.style.padding = "2px 5px";
-lockBtn.style.fontSize = "10px";
-lockBtn.style.backgroundColor = "black";
-lockBtn.style.color = "lime";
-lockBtn.style.border = "1px solid lime";
-camPanel.appendChild(lockBtn);
-lockBtn.addEventListener("click",()=>{
-    locked = !locked;
-    lockBtn.innerText = locked ? "LOCKED" : "LOCK";
-});
+let mapGenerated = false;
 
-// ---------- Cameras ----------
-const cams = ["cam1","cam2","cam3","cam4","cam5","cam6","cam7","cam8","cam9","cam10"];
-const MIN_LINES = 2;
-const MAX_LINES = 3;
-let cachedNodes = null;
-let cachedConnections = null;
+const CAM_COUNT = 10;
+const MAX_LINES = 2;
 
-// ---------- Grid-based placement to avoid overlap ----------
-function generatePositions(){
-    if(locked && cachedNodes) return cachedNodes;
+const FIELD_SIZE = 420;
+const BUTTON_SIZE = 40;
+const MIN_DISTANCE = 90;
 
-    const gridRows = 4;
-    const gridCols = 4;
-    const cellW = PANEL_SIZE/gridCols;
-    const cellH = PANEL_SIZE/gridRows;
+let cams = [];
+let connections = [];
+let usedSegments = [];
 
-    const availableCells=[];
-    for(let r=0;r<gridRows;r++){
-        for(let c=0;c<gridCols;c++){
-            availableCells.push({r,c});
+const sides = ["top", "right", "bottom", "left"];
+
+function createUI() {
+    const container = document.createElement("div");
+    container.id = "cam-ui";
+    container.style.position = "fixed";
+    container.style.bottom = "10px";
+    container.style.right = "10px";
+    container.style.width = FIELD_SIZE + "px";
+    container.style.height = FIELD_SIZE + "px";
+    container.style.background = "black";
+    container.style.zIndex = "999999";
+    container.style.border = "2px solid white";
+    container.style.display = "none";
+    container.style.overflow = "hidden";
+    document.body.appendChild(container);
+
+    const toggle = document.createElement("img");
+    toggle.src = chrome.runtime.getURL("cam-button.png");
+    toggle.style.position = "fixed";
+    toggle.style.bottom = "10px";
+    toggle.style.right = "10px";
+    toggle.style.width = "50px";
+    toggle.style.cursor = "pointer";
+    toggle.style.zIndex = "1000000";
+    document.body.appendChild(toggle);
+
+    toggle.onclick = () => {
+        container.style.display =
+            container.style.display === "none" ? "block" : "none";
+
+        if (!locked && !mapGenerated) {
+            generateMap(container);
+            mapGenerated = true;
+        }
+    };
+
+    const lockBtn = document.createElement("button");
+    lockBtn.innerText = "LOCK";
+    lockBtn.style.position = "absolute";
+    lockBtn.style.top = "5px";
+    lockBtn.style.left = "5px";
+    lockBtn.style.zIndex = "1000001";
+    lockBtn.onclick = () => {
+        locked = !locked;
+        lockBtn.innerText = locked ? "LOCKED" : "LOCK";
+    };
+    container.appendChild(lockBtn);
+}
+
+function generateMap(container) {
+    container.querySelectorAll(".cam").forEach(e => e.remove());
+    container.querySelectorAll(".line").forEach(e => e.remove());
+
+    cams = [];
+    connections = [];
+    usedSegments = [];
+
+    generatePositions();
+    createCamButtons(container);
+    connectCams(container);
+}
+
+function generatePositions() {
+    cams = [];
+
+    // Cam1 forced upper-left
+    cams.push({
+        id: 1,
+        x: 40,
+        y: 40,
+        connections: 0,
+        usedSides: []
+    });
+
+    while (cams.length < CAM_COUNT) {
+        let valid = false;
+
+        while (!valid) {
+            const x = Math.floor(Math.random() * (FIELD_SIZE - 80)) + 40;
+            const y = Math.floor(Math.random() * (FIELD_SIZE - 80)) + 40;
+
+            valid = cams.every(c =>
+                Math.hypot(c.x - x, c.y - y) >= MIN_DISTANCE
+            );
+
+            if (valid) {
+                cams.push({
+                    id: cams.length + 1,
+                    x,
+                    y,
+                    connections: 0,
+                    usedSides: []
+                });
+            }
         }
     }
-
-    const nodes=[];
-    cams.forEach(cam=>{
-        const idx=Math.floor(Math.random()*availableCells.length);
-        const cell=availableCells.splice(idx,1)[0];
-
-        const offsetX = Math.random()*(cellW-BUTTON_SIZE-10)+5;
-        const offsetY = Math.random()*(cellH-BUTTON_SIZE-10)+5;
-
-        const x = cell.c*cellW + offsetX;
-        const y = cell.r*cellH + offsetY;
-
-        nodes.push({cam,x,y,connections:[],usedSides:new Set()});
-    });
-
-    if(!locked) cachedNodes = nodes;
-    return nodes;
 }
 
-// ---------- Utility: distance ----------
-function dist(a,b){return Math.hypot(a.x-b.x,a.y-b.y);}
+function createCamButtons(container) {
+    cams.forEach(cam => {
+        const btn = document.createElement("div");
+        btn.className = "cam";
+        btn.innerText = "cam" + cam.id;
+        btn.style.position = "absolute";
+        btn.style.width = BUTTON_SIZE + "px";
+        btn.style.height = BUTTON_SIZE + "px";
+        btn.style.left = cam.x + "px";
+        btn.style.top = cam.y + "px";
+        btn.style.border = "2px solid white";
+        btn.style.color = "white";
+        btn.style.fontSize = "10px";
+        btn.style.display = "flex";
+        btn.style.alignItems = "center";
+        btn.style.justifyContent = "center";
+        btn.style.cursor = "pointer";
+        btn.style.userSelect = "none";
 
-// ---------- Pick different sides ----------
-function pickDifferentSides(a,b){
-    const sides=["top","bottom","left","right"];
-    const availA = sides.filter(s=>!a.usedSides.has(s));
-    const availB = sides.filter(s=>!b.usedSides.has(s));
-    let sideA, sideB;
+        btn.onmouseenter = () => btn.style.borderColor = "lime";
+        btn.onmouseleave = () => btn.style.borderColor = "white";
 
-    if(availA.includes("right") && availB.includes("left")) { sideA="right"; sideB="left"; }
-    else if(availA.includes("left") && availB.includes("right")) { sideA="left"; sideB="right"; }
-    else if(availA.includes("top") && availB.includes("bottom")) { sideA="top"; sideB="bottom"; }
-    else if(availA.includes("bottom") && availB.includes("top")) { sideA="bottom"; sideB="top"; }
-    else { sideA = availA[0] || "right"; sideB = availB[0] || "left"; }
-
-    a.usedSides.add(sideA);
-    b.usedSides.add(sideB);
-    return [sideA,sideB];
+        container.appendChild(btn);
+    });
 }
 
-// ---------- Track used segments to prevent crossing ----------
-const usedSegmentsH = [];
-const usedSegmentsV = [];
+function connectCams(container) {
+    let attempts = 0;
 
-// ---------- Draw segment ----------
-function drawSegment(x1,y1,x2,y2){
-    const lineH=document.createElementNS(svgNS,"line");
-    lineH.setAttribute("x1",x1);
-    lineH.setAttribute("y1",y1);
-    lineH.setAttribute("x2",x2);
-    lineH.setAttribute("y2",y1);
-    lineH.setAttribute("stroke","gray");
-    lineH.setAttribute("stroke-width","2");
-    svg.appendChild(lineH);
-    usedSegmentsH.push({y:y1,x1:Math.min(x1,x2),x2:Math.max(x1,x2)});
-
-    const lineV=document.createElementNS(svgNS,"line");
-    lineV.setAttribute("x1",x2);
-    lineV.setAttribute("y1",y1);
-    lineV.setAttribute("x2",x2);
-    lineV.setAttribute("y2",y2);
-    lineV.setAttribute("stroke","gray");
-    lineV.setAttribute("stroke-width","2");
-    svg.appendChild(lineV);
-    usedSegmentsV.push({x:x2,y1:Math.min(y1,y2),y2:Math.max(y1,y2)});
-}
-
-// ---------- Connect nearest cams respecting min/max ----------
-function connectNodes(nodes){
-    usedSegmentsH.length=0;
-    usedSegmentsV.length=0;
-    const drawn = new Set();
-
-    // Build adjacency list sorted by distance
-    const neighbors=[];
-    nodes.forEach(a=>{
-        const dists=nodes.filter(n=>n!==a).map(b=>({b,d:dist(a,b)})).sort((x,y)=>x.d-y.d);
-        neighbors.push({a,dists});
-    });
-
-    // Connect each node until min connections
-    neighbors.forEach(({a,dists})=>{
-        for(const {b} of dists){
-            if(a.connections.length>=MIN_LINES) break;
-            if(b.connections.length>=MAX_LINES) continue;
-            const key=[a.cam,b.cam].sort().join("-");
-            if(drawn.has(key)) continue;
-            const [sideA,sideB]=pickDifferentSides(a,b);
-            a.connections.push({target:b,side:sideA});
-            b.connections.push({target:a,side:sideB});
-            drawn.add(key);
-        }
-    });
-
-    // Extra connections up to MAX_LINES
-    let attempts=0;
-    while(nodes.some(n=>n.connections.length<MAX_LINES) && attempts<2000){
+    while (!allConnected() && attempts < 500) {
         attempts++;
-        const a=nodes[Math.floor(Math.random()*nodes.length)];
-        if(a.connections.length>=MAX_LINES) continue;
-        const dists=nodes.filter(n=>n!==a && n.connections.length<MAX_LINES)
-                         .map(b=>({b,d:dist(a,b)})).sort((x,y)=>x.d-y.d);
-        if(dists.length===0) break;
-        const b=dists[0].b;
-        const key=[a.cam,b.cam].sort().join("-");
-        if(drawn.has(key)) continue;
-        const [sideA,sideB]=pickDifferentSides(a,b);
-        a.connections.push({target:b,side:sideA});
-        b.connections.push({target:a,side:sideB});
-        drawn.add(key);
-    }
 
-    if(!locked) cachedConnections = drawn;
-    return drawn;
+        for (let cam of cams) {
+            if (cam.connections >= MAX_LINES) continue;
+
+            const nearest = findNearestAvailable(cam);
+
+            if (nearest) {
+                tryConnect(cam, nearest, container);
+            }
+        }
+    }
 }
 
-// ---------- Draw all connections ----------
-function drawLines(nodes,connections){
-    svg.innerHTML="";
-    connections.forEach(key=>{
-        const [aName,bName]=key.split("-");
-        const a=nodes.find(n=>n.cam===aName);
-        const b=nodes.find(n=>n.cam===bName);
+function findNearestAvailable(cam) {
+    const sorted = cams
+        .filter(c => c.id !== cam.id && c.connections < MAX_LINES)
+        .sort((a, b) =>
+            Math.hypot(cam.x - a.x, cam.y - a.y) -
+            Math.hypot(cam.x - b.x, cam.y - b.y)
+        );
 
-        const connA=a.connections.find(c=>c.target===b);
-        const connB=b.connections.find(c=>c.target===a);
+    return sorted[0] || null;
+}
 
-        let x1=a.x+BUTTON_SIZE/2, y1=a.y+BUTTON_SIZE/2;
-        let x2=b.x+BUTTON_SIZE/2, y2=b.y+BUTTON_SIZE/2;
+function tryConnect(a, b, container) {
+    if (a.connections >= MAX_LINES || b.connections >= MAX_LINES) return;
 
-        if(connA.side==="top") y1=a.y;
-        if(connA.side==="bottom") y1=a.y+BUTTON_SIZE;
-        if(connA.side==="left") x1=a.x;
-        if(connA.side==="right") x1=a.x+BUTTON_SIZE;
+    const sideA = getFreeSide(a);
+    const sideB = getFreeSide(b);
 
-        if(connB.side==="top") y2=b.y;
-        if(connB.side==="bottom") y2=b.y+BUTTON_SIZE;
-        if(connB.side==="left") x2=b.x;
-        if(connB.side==="right") x2=b.x+BUTTON_SIZE;
+    if (!sideA || !sideB) return;
 
-        drawSegment(x1,y1,x2,y2);
+    const path = generateOrthogonalPath(a, b, sideA, sideB);
+
+    if (!path) return;
+
+    if (pathIntersects(path)) return;
+
+    drawPath(path, container);
+
+    a.connections++;
+    b.connections++;
+
+    a.usedSides.push(sideA);
+    b.usedSides.push(sideB);
+
+    usedSegments.push(...path);
+}
+
+function generateOrthogonalPath(a, b, sideA, sideB) {
+    const start = getSidePoint(a, sideA);
+    const end = getSidePoint(b, sideB);
+
+    const mid = { x: end.x, y: start.y };
+
+    return [
+        { x1: start.x, y1: start.y, x2: mid.x, y2: mid.y },
+        { x1: mid.x, y1: mid.y, x2: end.x, y2: end.y }
+    ];
+}
+
+function getSidePoint(cam, side) {
+    const centerX = cam.x + BUTTON_SIZE / 2;
+    const centerY = cam.y + BUTTON_SIZE / 2;
+
+    if (side === "top") return { x: centerX, y: cam.y };
+    if (side === "bottom") return { x: centerX, y: cam.y + BUTTON_SIZE };
+    if (side === "left") return { x: cam.x, y: centerY };
+    if (side === "right") return { x: cam.x + BUTTON_SIZE, y: centerY };
+}
+
+function getFreeSide(cam) {
+    return sides.find(s => !cam.usedSides.includes(s));
+}
+
+function pathIntersects(path) {
+    for (let seg of path) {
+        for (let used of usedSegments) {
+            if (segmentsIntersect(seg, used)) return true;
+        }
+    }
+    return false;
+}
+
+function segmentsIntersect(a, b) {
+    if (a.x1 === a.x2 && b.x1 === b.x2) {
+        if (a.x1 !== b.x1) return false;
+        return overlap(a.y1, a.y2, b.y1, b.y2);
+    }
+    if (a.y1 === a.y2 && b.y1 === b.y2) {
+        if (a.y1 !== b.y1) return false;
+        return overlap(a.x1, a.x2, b.x1, b.x2);
+    }
+    return false;
+}
+
+function overlap(a1, a2, b1, b2) {
+    const minA = Math.min(a1, a2);
+    const maxA = Math.max(a1, a2);
+    const minB = Math.min(b1, b2);
+    const maxB = Math.max(b1, b2);
+    return maxA >= minB && maxB >= minA;
+}
+
+function drawPath(path, container) {
+    path.forEach(seg => {
+        const line = document.createElement("div");
+        line.className = "line";
+        line.style.position = "absolute";
+        line.style.background = "gray";
+
+        if (seg.x1 === seg.x2) {
+            line.style.left = seg.x1 + "px";
+            line.style.top = Math.min(seg.y1, seg.y2) + "px";
+            line.style.width = "3px";
+            line.style.height = Math.abs(seg.y2 - seg.y1) + "px";
+        } else {
+            line.style.left = Math.min(seg.x1, seg.x2) + "px";
+            line.style.top = seg.y1 + "px";
+            line.style.width = Math.abs(seg.x2 - seg.x1) + "px";
+            line.style.height = "3px";
+        }
+
+        container.appendChild(line);
     });
 }
 
-// ---------- Create cam buttons ----------
-function createCamButtons(){
-    camPanel.innerHTML="";
-    camPanel.appendChild(svg);
-    camPanel.appendChild(lockBtn);
-
-    const nodes=generatePositions();
-    const connections=connectNodes(nodes);
-    drawLines(nodes,connections);
-
-    nodes.forEach(node=>{
-        const btn=document.createElement("div");
-        btn.innerText=node.cam.toUpperCase();
-        btn.style.position="absolute";
-        btn.style.left=node.x+"px";
-        btn.style.top=node.y+"px";
-        btn.style.width=BUTTON_SIZE+"px";
-        btn.style.height=BUTTON_SIZE+"px";
-        btn.style.backgroundColor="black";
-        btn.style.border="1px solid gray";
-        btn.style.color="gray";
-        btn.style.display="flex";
-        btn.style.justifyContent="center";
-        btn.style.alignItems="center";
-        btn.style.fontSize="9px";
-        btn.style.cursor="pointer";
-        btn.style.zIndex="2";
-
-        btn.addEventListener("mouseenter",()=>{btn.style.border="1px solid lime"; btn.style.color="lime";});
-        btn.addEventListener("mouseleave",()=>{btn.style.border="1px solid gray"; btn.style.color="gray";});
-        btn.addEventListener("click",()=>{
-            chrome.storage.local.get(node.cam,({[node.cam]:url})=>{
-                if(!url) return alert(`Set URL for ${node.cam}`);
-                chrome.runtime.sendMessage({action:"switchTab",url});
-            });
-        });
-        btn.addEventListener("contextmenu",e=>{
-            e.preventDefault();
-            const newUrl=prompt(`Enter new URL for ${node.cam.toUpperCase()}`);
-            if(newUrl) chrome.storage.local.set({[node.cam]:newUrl},()=>alert(`${node.cam.toUpperCase()} URL updated!`));
-        });
-        camPanel.appendChild(btn);
-    });
+function allConnected() {
+    return cams.every(c => c.connections <= MAX_LINES);
 }
 
-// ---------- Toggle panel ----------
-let panelVisible=false;
-toggleBtn.addEventListener("click",()=>{
-    if(!panelVisible){
-        createCamButtons();
-        camPanel.style.display="block";
-    } else {
-        camPanel.style.display="none";
-    }
-    panelVisible=!panelVisible;
-});
-
-// ---------- Default URLs ----------
-chrome.storage.local.set({
-    cam1:"https://www.google.com",
-    cam2:"https://www.youtube.com",
-    cam3:"https://chat.openai.com/",
-    cam4:"https://news.google.com/",
-    cam5:"https://twitter.com/",
-    cam6:"https://reddit.com/",
-    cam7:"https://github.com/",
-    cam8:"https://stackoverflow.com/",
-    cam9:"https://youtube.com/",
-    cam10:"https://discord.com/"
-});
+createUI();
