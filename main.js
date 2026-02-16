@@ -9,7 +9,7 @@ let cams = [];
 let lines = [];
 const sides = ["top", "right", "bottom", "left"];
 
-// URLs for each cam
+// URLs
 let camURLs = [
     "https://www.google.com",
     "https://www.youtube.com",
@@ -31,7 +31,7 @@ function createUI() {
     field.id = "cam-field";
     field.style.position = "fixed";
     field.style.bottom = "15px";
-    field.style.right = "75px"; // shifted right so toggle button is clickable
+    field.style.right = "75px"; // shift right for toggle
     field.style.width = FIELD_SIZE + "px";
     field.style.height = FIELD_SIZE + "px";
     field.style.background = "black";
@@ -74,7 +74,6 @@ function createUI() {
 function generateMap(field) {
     field.querySelectorAll(".cam").forEach(e => e.remove());
     field.querySelectorAll(".line").forEach(e => e.remove());
-
     cams = [];
     lines = [];
 
@@ -93,13 +92,7 @@ function generateCams() {
         let y = Math.random() * (FIELD_SIZE - BUTTON_SIZE * 2) + BUTTON_SIZE;
 
         if (cams.every(c => Math.hypot(c.x - x, c.y - y) > MIN_DISTANCE)) {
-            cams.push({
-                id: cams.length,
-                x,
-                y,
-                connections: 0,
-                usedSides: []
-            });
+            cams.push({ id: cams.length, x, y, connections: 0, usedSides: [] });
         }
     }
 }
@@ -117,8 +110,8 @@ function drawCams(field) {
         btn.style.top = cam.y + "px";
         btn.style.width = BUTTON_SIZE + "px";
         btn.style.height = BUTTON_SIZE + "px";
-        btn.style.background = "black"; // filled square
-        btn.style.border = "2px solid white"; // outline color
+        btn.style.background = "black";
+        btn.style.border = "2px solid white";
         btn.style.color = "white";
         btn.style.fontSize = "10px";
         btn.style.display = "flex";
@@ -128,24 +121,15 @@ function drawCams(field) {
         btn.style.cursor = "pointer";
         btn.style.zIndex = "10";
 
-        // hover: outline turns lime
         btn.onmouseenter = () => btn.style.borderColor = "lime";
         btn.onmouseleave = () => btn.style.borderColor = "white";
 
-        // Left-click -> switch/focus tab
-        btn.onclick = () => {
-            const url = camURLs[cam.id];
-            chrome.runtime.sendMessage({ action: "switchTabToUrl", url });
-        };
+        btn.onclick = () => chrome.runtime.sendMessage({ action: "switchTabToUrl", url: camURLs[cam.id] });
 
-        // Right-click -> change URL
         btn.oncontextmenu = (e) => {
             e.preventDefault();
             const newURL = prompt(`Enter new URL for cam${cam.id + 1}:`, camURLs[cam.id]);
-            if (newURL && newURL.trim() !== "") {
-                camURLs[cam.id] = newURL.trim();
-                alert(`Cam${cam.id + 1} URL updated!`);
-            }
+            if (newURL && newURL.trim() !== "") camURLs[cam.id] = newURL.trim();
         };
 
         field.appendChild(btn);
@@ -153,17 +137,15 @@ function drawCams(field) {
 }
 
 // --------------------
-// Create full closed loop
+// Full closed loop with corners
 // --------------------
 function createFullClosedLoop() {
     // first connect in loop
     for (let i = 0; i < CAM_COUNT; i++) {
-        let a = cams[i];
-        let b = cams[(i + 1) % CAM_COUNT];
-        connectTwo(a, b);
+        connectTwo(cams[i], cams[(i + 1) % CAM_COUNT]);
     }
 
-    // then fill remaining connections to max lines per cam
+    // then fill remaining connections
     let done = false;
     while (!done) {
         done = true;
@@ -180,7 +162,7 @@ function createFullClosedLoop() {
 }
 
 // --------------------
-// Connect two cams with L-shaped corners outside button
+// Connect two cams
 // --------------------
 function connectTwo(a, b) {
     if (a.connections >= MAX_LINES || b.connections >= MAX_LINES) return;
@@ -192,14 +174,16 @@ function connectTwo(a, b) {
     let start = getSidePointOutside(a, sideA);
     let end = getSidePointOutside(b, sideB);
 
-    // L-shaped corner
-    let corner = Math.random() > 0.5 ? { x: start.x, y: end.y } : { x: end.x, y: start.y };
+    // L-shaped corner always aligned to horizontal/vertical
+    let corner = { x: start.x, y: end.y }; // always horizontal then vertical
 
+    // Create segments
     let segs = [
         { x1: start.x, y1: start.y, x2: corner.x, y2: corner.y },
         { x1: corner.x, y1: corner.y, x2: end.x, y2: end.y }
     ];
 
+    // prevent crossing lines
     if (intersects(segs)) return;
 
     lines.push(...segs);
@@ -216,7 +200,7 @@ function getFreeSide(cam) { return sides.find(s => !cam.usedSides.includes(s)); 
 function getSidePointOutside(cam, side) {
     let cx = cam.x + BUTTON_SIZE / 2;
     let cy = cam.y + BUTTON_SIZE / 2;
-    let offset = 3; // stop outside button
+    let offset = 3;
     if (side === "top") return { x: cx, y: cam.y - offset };
     if (side === "bottom") return { x: cx, y: cam.y + BUTTON_SIZE + offset };
     if (side === "left") return { x: cam.x - offset, y: cy };
@@ -243,7 +227,7 @@ function rangesOverlap(a1, a2, b1, b2) {
 }
 
 // --------------------
-// Draw lines under cams
+// Draw lines
 // --------------------
 function drawLines(field) {
     lines.forEach(s => {
@@ -256,13 +240,13 @@ function drawLines(field) {
         if (s.x1 === s.x2) {
             line.style.left = s.x1 + "px";
             line.style.top = Math.min(s.y1, s.y2) + "px";
-            line.style.width = "3px";
+            line.style.width = "2px"; // thinner
             line.style.height = Math.abs(s.y2 - s.y1) + "px";
         } else {
             line.style.left = Math.min(s.x1, s.x2) + "px";
             line.style.top = s.y1 + "px";
             line.style.width = Math.abs(s.x2 - s.x1) + "px";
-            line.style.height = "3px";
+            line.style.height = "2px"; // thinner
         }
 
         field.appendChild(line);
