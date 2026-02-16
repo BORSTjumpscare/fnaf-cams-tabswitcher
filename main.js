@@ -13,7 +13,6 @@ document.body.appendChild(toggleBtn);
 // ---------- Panel ----------
 const PANEL_SIZE = 320;
 const BUTTON_SIZE = 40;
-const GRID_SIZE = 60;
 const camPanel = document.createElement("div");
 camPanel.style.position = "fixed";
 camPanel.style.bottom = "70px";
@@ -64,23 +63,16 @@ const MAX_LINES = 3;
 let cachedNodes = null;
 let cachedConnections = null;
 
-// ---------- Generate cam positions ----------
+// ---------- Generate cam positions with spread ----------
 function generatePositions(){
     if(locked && cachedNodes) return cachedNodes;
     const nodes = [];
-    const rows = 2;
-    const cols = 5;
-    let idx=0;
-    for(let r=0;r<rows;r++){
-        for(let c=0;c<cols;c++){
-            if(idx>=cams.length) break;
-            const baseX = c*GRID_SIZE+10;
-            const baseY = r*GRID_SIZE+10;
-            const x = baseX + Math.random()*10;
-            const y = baseY + Math.random()*10;
-            nodes.push({cam:cams[idx], x, y, connections:[], usedSides:new Set()});
-            idx++;
-        }
+    const padding = 20;
+    const area = PANEL_SIZE - BUTTON_SIZE - padding*2;
+    for(let i=0;i<cams.length;i++){
+        const x = padding + Math.random()*area;
+        const y = padding + Math.random()*area;
+        nodes.push({cam:cams[i], x, y, connections:[], usedSides:new Set()});
     }
     if(!locked) cachedNodes = nodes;
     return nodes;
@@ -106,7 +98,7 @@ function pickDifferentSides(a,b){
 function connectNodes(nodes){
     const drawn = new Set();
 
-    // First, make a ring so all nodes have at least 2
+    // First, ring connection
     for(let i=0;i<nodes.length;i++){
         const a=nodes[i], b=nodes[(i+1)%nodes.length];
         const [sideA, sideB] = pickDifferentSides(a,b);
@@ -115,9 +107,9 @@ function connectNodes(nodes){
         drawn.add([a.cam,b.cam].sort().join("-"));
     }
 
-    // Extra connections up to MAX_LINES
+    // Extra connections for min/max
     let attempts = 0;
-    while(nodes.some(n=>n.connections.length<MAX_LINES) && attempts<1000){
+    while(nodes.some(n=>n.connections.length<MAX_LINES) && attempts<2000){
         attempts++;
         const a=nodes[Math.floor(Math.random()*nodes.length)];
         const b=nodes[Math.floor(Math.random()*nodes.length)];
@@ -125,8 +117,7 @@ function connectNodes(nodes){
         if(a.connections.length>=MAX_LINES || b.connections.length>=MAX_LINES) continue;
         const key=[a.cam,b.cam].sort().join("-");
         if(drawn.has(key)) continue;
-
-        const [sideA, sideB]=pickDifferentSides(a,b);
+        const [sideA, sideB] = pickDifferentSides(a,b);
         a.connections.push({target:b, side:sideA});
         b.connections.push({target:a, side:sideB});
         drawn.add(key);
@@ -160,7 +151,6 @@ function drawLines(nodes, connections){
         if(connB.side==="left") x2=b.x;
         if(connB.side==="right") x2=b.x+BUTTON_SIZE;
 
-        // Horizontal then vertical
         const lineH=document.createElementNS(svgNS,"line");
         lineH.setAttribute("x1",x1);
         lineH.setAttribute("y1",y1);
