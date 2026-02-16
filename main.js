@@ -23,12 +23,12 @@ let camURLs = [
 ];
 
 let field, lockBtn, toggleBtn;
+let mapGenerated = false;
 
 // --------------------
 // Create UI
 // --------------------
 function createUI() {
-    // Only create field once
     field = document.createElement("div");
     field.id = "cam-field";
     field.style.position = "fixed";
@@ -41,7 +41,6 @@ function createUI() {
     field.style.display = "none";
     field.style.zIndex = "999999";
     field.style.pointerEvents = "none"; // allow clicks through field
-    field.style.overflow = "visible";
     document.body.appendChild(field);
 
     // Toggle button
@@ -58,19 +57,22 @@ function createUI() {
     toggleBtn.onclick = () => {
         if (field.style.display === "none") {
             field.style.display = "block";
-            if (!locked) generateMap();
+            if (!locked && !mapGenerated) {
+                generateMap();
+                mapGenerated = true;
+            }
         } else {
             field.style.display = "none";
         }
     };
 
-    // Lock button inside field
+    // Lock button
     lockBtn = document.createElement("button");
     lockBtn.innerText = "LOCK";
     lockBtn.style.position = "absolute";
     lockBtn.style.top = "5px";
     lockBtn.style.left = "5px";
-    lockBtn.style.pointerEvents = "auto"; // clickable
+    lockBtn.style.pointerEvents = "auto";
     lockBtn.onclick = () => {
         locked = !locked;
         lockBtn.innerText = locked ? "LOCKED" : "LOCK";
@@ -82,16 +84,14 @@ function createUI() {
 // Generate map
 // --------------------
 function generateMap() {
-    // Remove previous cams and lines
-    field.querySelectorAll(".cam").forEach(e => e.remove());
-    field.querySelectorAll(".line").forEach(e => e.remove());
-    cams = [];
-    lines = [];
-
-    generateCams();
-    createFullClosedLoop();
-    drawLines();
-    drawCams();
+    if (!mapGenerated) {
+        cams = [];
+        lines = [];
+        generateCams();
+        createFullClosedLoop();
+        drawLines();
+        drawCams();
+    }
 }
 
 // --------------------
@@ -131,7 +131,7 @@ function drawCams() {
         btn.style.userSelect = "none";
         btn.style.cursor = "pointer";
         btn.style.zIndex = "10";
-        btn.style.pointerEvents = "auto"; // only buttons clickable
+        btn.style.pointerEvents = "auto";
 
         btn.onmouseenter = () => btn.style.borderColor = "lime";
         btn.onmouseleave = () => btn.style.borderColor = "white";
@@ -181,10 +181,10 @@ function connectTwo(a, b) {
     let sideB = getFreeSide(b);
     if (!sideA || !sideB) return;
 
-    let start = getSidePointEdge(a, sideA);
-    let end = getSidePointEdge(b, sideB);
+    let start = getSidePointCenter(a, sideA); // center of side
+    let end = getSidePointCenter(b, sideB);
 
-    // L-corner: horizontal then vertical
+    // L-corner horizontal then vertical
     let corner = { x: start.x, y: end.y };
 
     let segs = [
@@ -205,7 +205,7 @@ function connectTwo(a, b) {
 // Helpers
 // --------------------
 function getFreeSide(cam) { return sides.find(s => !cam.usedSides.includes(s)); }
-function getSidePointEdge(cam, side) {
+function getSidePointCenter(cam, side) {
     let cx = cam.x + BUTTON_SIZE / 2;
     let cy = cam.y + BUTTON_SIZE / 2;
     if (side === "top") return { x: cx, y: cam.y };
@@ -243,7 +243,7 @@ function drawLines() {
         line.style.position = "absolute";
         line.style.background = "gray";
         line.style.zIndex = "1";
-        line.style.pointerEvents = "none"; // lines not clickable
+        line.style.pointerEvents = "none";
 
         if (s.x1 === s.x2) {
             line.style.left = s.x1 + "px";
