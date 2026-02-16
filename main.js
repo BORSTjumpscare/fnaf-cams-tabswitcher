@@ -11,7 +11,7 @@ toggleBtn.style.zIndex = "99999";
 document.body.appendChild(toggleBtn);
 
 // ---------- Panel ----------
-const PANEL_SIZE = 280;
+const PANEL_SIZE = 320;
 const BUTTON_SIZE = 40;
 
 const camPanel = document.createElement("div");
@@ -25,10 +25,9 @@ camPanel.style.border = "1px solid lime";
 camPanel.style.display = "none";
 camPanel.style.zIndex = "99998";
 camPanel.style.overflow = "hidden";
-camPanel.style.position = "fixed";
 document.body.appendChild(camPanel);
 
-// SVG layer for connection lines
+// SVG for lines
 const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
 svg.setAttribute("width", PANEL_SIZE);
 svg.setAttribute("height", PANEL_SIZE);
@@ -38,52 +37,43 @@ svg.style.left = "0";
 svg.style.zIndex = "0";
 camPanel.appendChild(svg);
 
-// ---------- Cameras ----------
-const cams = [
-  "cam1","cam2","cam3","cam4","cam5",
-  "cam6","cam7","cam8","cam9","cam10"
-];
-
-function isOverlapping(x, y, positions) {
-  return positions.some(pos => {
-    return !(
-      x + BUTTON_SIZE + 10 < pos.x ||
-      x > pos.x + BUTTON_SIZE + 10 ||
-      y + BUTTON_SIZE + 10 < pos.y ||
-      y > pos.y + BUTTON_SIZE + 10
-    );
-  });
-}
+// Cameras
+const cams = ["cam1","cam2","cam3","cam4","cam5","cam6","cam7","cam8","cam9","cam10"];
 
 function createCamButtons() {
   camPanel.innerHTML = "";
   camPanel.appendChild(svg);
   svg.innerHTML = "";
 
-  const positions = [];
-  const buttons = [];
+  const nodes = [];
 
-  // Generate random non-overlapping positions
-  cams.forEach(cam => {
-    let x, y, attempts = 0;
-
-    do {
-      x = Math.floor(Math.random() * (PANEL_SIZE - BUTTON_SIZE));
-      y = Math.floor(Math.random() * (PANEL_SIZE - BUTTON_SIZE));
-      attempts++;
-    } while (isOverlapping(x, y, positions) && attempts < 200);
-
-    positions.push({ x, y, cam });
+  // ---------- Create main hallway ----------
+  const mainY = PANEL_SIZE / 2 - BUTTON_SIZE / 2;
+  let x = 20;
+  cams.slice(0, 5).forEach(cam => {
+    nodes.push({ cam, x, y: mainY, connections: [] });
+    x += BUTTON_SIZE + 40;
   });
 
-  // Create buttons
-  positions.forEach(pos => {
-    const btn = document.createElement("div");
-    btn.innerText = pos.cam.toUpperCase();
+  // ---------- Add vertical side rooms ----------
+  cams.slice(5).forEach(cam => {
+    const parent = nodes[Math.floor(Math.random() * 5)]; // connect to main hallway
+    const direction = Math.random() < 0.5 ? -1 : 1; // above or below
+    const offsetY = direction * (BUTTON_SIZE + 30);
+    const offsetX = (Math.random() - 0.5) * 20; // slight x variation
+    const x = parent.x + offsetX;
+    const y = parent.y + offsetY;
+    nodes.push({ cam, x, y, connections: [parent] });
+    parent.connections.push({ cam, x, y }); // back connection
+  });
 
+  // ---------- Draw buttons ----------
+  nodes.forEach(node => {
+    const btn = document.createElement("div");
+    btn.innerText = node.cam.toUpperCase();
     btn.style.position = "absolute";
-    btn.style.left = pos.x + "px";
-    btn.style.top = pos.y + "px";
+    btn.style.left = node.x + "px";
+    btn.style.top = node.y + "px";
     btn.style.width = BUTTON_SIZE + "px";
     btn.style.height = BUTTON_SIZE + "px";
     btn.style.backgroundColor = "black";
@@ -95,9 +85,7 @@ function createCamButtons() {
     btn.style.fontSize = "9px";
     btn.style.cursor = "pointer";
     btn.style.zIndex = "2";
-    btn.style.userSelect = "none";
 
-    // Hover
     btn.addEventListener("mouseenter", () => {
       btn.style.border = "1px solid lime";
       btn.style.color = "lime";
@@ -108,50 +96,63 @@ function createCamButtons() {
       btn.style.color = "gray";
     });
 
-    // Left click
     btn.addEventListener("click", () => {
-      chrome.storage.local.get(pos.cam, ({ [pos.cam]: url }) => {
-        if (!url) return alert(`Set URL for ${pos.cam}`);
+      chrome.storage.local.get(node.cam, ({ [node.cam]: url }) => {
+        if (!url) return alert(`Set URL for ${node.cam}`);
         chrome.runtime.sendMessage({ action: "switchTab", url });
       });
     });
 
-    // Right click
-    btn.addEventListener("contextmenu", (e) => {
+    btn.addEventListener("contextmenu", e => {
       e.preventDefault();
-      const newUrl = prompt(`Enter new URL for ${pos.cam.toUpperCase()}`);
-      if (newUrl) {
-        chrome.storage.local.set({ [pos.cam]: newUrl }, () =>
-          alert(`${pos.cam.toUpperCase()} URL updated!`)
-        );
-      }
+      const newUrl = prompt(`Enter new URL for ${node.cam.toUpperCase()}`);
+      if (newUrl) chrome.storage.local.set({ [node.cam]: newUrl }, () =>
+        alert(`${node.cam.toUpperCase()} URL updated!`)
+      );
     });
 
     camPanel.appendChild(btn);
-    buttons.push({ element: btn, ...pos });
+    node.element = btn;
   });
 
-  // Randomly connect some cameras with grey lines
-  buttons.forEach(btn => {
-    if (Math.random() < 0.4) { // 40% chance to create a connection
-      const target = buttons[Math.floor(Math.random() * buttons.length)];
-      if (target !== btn) {
-        const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-        line.setAttribute("x1", btn.x + BUTTON_SIZE / 2);
-        line.setAttribute("y1", btn.y + BUTTON_SIZE / 2);
-        line.setAttribute("x2", target.x + BUTTON_SIZE / 2);
-        line.setAttribute("y2", target.y + BUTTON_SIZE / 2);
-        line.setAttribute("stroke", "gray");
-        line.setAttribute("stroke-width", "1");
-        svg.appendChild(line);
-      }
-    }
+  // ---------- Draw L-shaped lines ----------
+  nodes.forEach(node => {
+    node.connections.forEach(target => {
+      drawLLine(node, target);
+    });
   });
 }
 
-// ---------- Toggle ----------
-let panelVisible = false;
+// ---------- Draw L-shaped lines ----------
+function drawLLine(a, b) {
+  const x1 = a.x + BUTTON_SIZE / 2;
+  const y1 = a.y + BUTTON_SIZE / 2;
+  const x2 = b.x + BUTTON_SIZE / 2;
+  const y2 = b.y + BUTTON_SIZE / 2;
 
+  // Horizontal then vertical
+  const line1 = document.createElementNS("http://www.w3.org/2000/svg", "line");
+  line1.setAttribute("x1", x1);
+  line1.setAttribute("y1", y1);
+  line1.setAttribute("x2", x2);
+  line1.setAttribute("y2", y1);
+  line1.setAttribute("stroke", "gray");
+  line1.setAttribute("stroke-width", "1");
+
+  const line2 = document.createElementNS("http://www.w3.org/2000/svg", "line");
+  line2.setAttribute("x1", x2);
+  line2.setAttribute("y1", y1);
+  line2.setAttribute("x2", x2);
+  line2.setAttribute("y2", y2);
+  line2.setAttribute("stroke", "gray");
+  line2.setAttribute("stroke-width", "1");
+
+  svg.appendChild(line1);
+  svg.appendChild(line2);
+}
+
+// ---------- Toggle panel ----------
+let panelVisible = false;
 toggleBtn.addEventListener("click", () => {
   if (!panelVisible) {
     createCamButtons();
