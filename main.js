@@ -47,7 +47,7 @@ function isOverlapping(x, y, nodes) {
   return nodes.some(n => Math.hypot(n.x - x, n.y - y) < BUTTON_SIZE + 10);
 }
 
-// Generate random non-overlapping positions
+// ---------- Generate random cams ----------
 function generatePositions() {
   const nodes = [];
   cams.forEach(cam => {
@@ -66,7 +66,7 @@ function generatePositions() {
 function connectNodes(nodes) {
   const drawn = new Set();
 
-  // Step 1: Make a ring (ensures full closed shape)
+  // Step 1: Ring
   for (let i = 0; i < nodes.length; i++) {
     const a = nodes[i];
     const b = nodes[(i + 1) % nodes.length];
@@ -75,7 +75,7 @@ function connectNodes(nodes) {
     drawn.add([a.cam, b.cam].sort().join("-"));
   }
 
-  // Step 2: Ensure each node has at least 2 connections (add extra if needed)
+  // Step 2: Add extra connections to ensure min 2 per cam
   nodes.forEach(node => {
     while (node.connections.length < 2) {
       const target = nodes[Math.floor(Math.random() * nodes.length)];
@@ -91,14 +91,14 @@ function connectNodes(nodes) {
   return drawn;
 }
 
-// ---------- Draw orthogonal line with optional multiple corners ----------
-function drawPath(a, b) {
+// ---------- Draw Manhattan lines without crossing ----------
+function drawPathNoCross(a, b, usedSegments) {
   const x1 = a.x + BUTTON_SIZE / 2;
   const y1 = a.y + BUTTON_SIZE / 2;
   const x2 = b.x + BUTTON_SIZE / 2;
   const y2 = b.y + BUTTON_SIZE / 2;
 
-  // Decide number of segments (1-3)
+  // Randomly decide number of segments (1-3)
   const segments = Math.floor(Math.random() * 3) + 1;
   let points = [{ x: x1, y: y1 }];
 
@@ -110,30 +110,50 @@ function drawPath(a, b) {
     points.push({ x: midX, y: y1 });
     points.push({ x: midX, y: y2 });
     points.push({ x: x2, y: y2 });
-  } else { // 3 segments
+  } else {
     const midX1 = x1 + (x2 - x1) * 0.3;
     const midY1 = y1 + (y2 - y1) * 0.3;
     const midX2 = x1 + (x2 - x1) * 0.7;
+    const midY2 = y1 + (y2 - y1) * 0.7;
     points.push({ x: midX1, y: y1 });
     points.push({ x: midX1, y: midY1 });
     points.push({ x: midX2, y: midY1 });
-    points.push({ x: midX2, y: y2 });
+    points.push({ x: midX2, y: midY2 });
     points.push({ x: x2, y: y2 });
   }
 
+  // Draw segments while nudging if occupied
   for (let i = 0; i < points.length - 1; i++) {
+    let xStart = points[i].x;
+    let yStart = points[i].y;
+    let xEnd = points[i + 1].x;
+    let yEnd = points[i + 1].y;
+
+    // Check horizontal
+    if (yStart === yEnd) {
+      const key = `H:${Math.min(xStart,xEnd)}-${yStart}-${Math.max(xStart,xEnd)}`;
+      if (usedSegments.has(key)) yStart += 3; yEnd += 3;
+      usedSegments.add(key);
+    }
+    // Check vertical
+    if (xStart === xEnd) {
+      const key = `V:${xStart}-${Math.min(yStart,yEnd)}-${Math.max(yStart,yEnd)}`;
+      if (usedSegments.has(key)) xStart += 3; xEnd += 3;
+      usedSegments.add(key);
+    }
+
     const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-    line.setAttribute("x1", points[i].x);
-    line.setAttribute("y1", points[i].y);
-    line.setAttribute("x2", points[i + 1].x);
-    line.setAttribute("y2", points[i + 1].y);
+    line.setAttribute("x1", xStart);
+    line.setAttribute("y1", yStart);
+    line.setAttribute("x2", xEnd);
+    line.setAttribute("y2", yEnd);
     line.setAttribute("stroke", "gray");
     line.setAttribute("stroke-width", "1");
     svg.appendChild(line);
   }
 }
 
-// ---------- Create cam buttons and draw network ----------
+// ---------- Create cam buttons and network ----------
 function createCamButtons() {
   camPanel.innerHTML = "";
   camPanel.appendChild(svg);
@@ -141,14 +161,14 @@ function createCamButtons() {
 
   const nodes = generatePositions();
   const drawn = connectNodes(nodes);
+  const usedSegments = new Set();
 
-  // Draw connections
   nodes.forEach(node => {
     node.connections.forEach(target => {
       const key = [node.cam, target.cam].sort().join("-");
       if (!drawn.has(key)) return;
-      drawPath(node, target);
-      drawn.delete(key); // prevent duplicate
+      drawPathNoCross(node, target, usedSegments);
+      drawn.delete(key);
     });
   });
 
