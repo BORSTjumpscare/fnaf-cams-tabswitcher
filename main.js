@@ -9,7 +9,6 @@ let cams = [];
 let lines = [];
 const sides = ["top", "right", "bottom", "left"];
 
-// URLs
 let camURLs = [
     "https://www.google.com",
     "https://www.youtube.com",
@@ -31,14 +30,14 @@ function createUI() {
     field.id = "cam-field";
     field.style.position = "fixed";
     field.style.bottom = "15px";
-    field.style.right = "75px"; // shift right for toggle
+    field.style.right = "75px";
     field.style.width = FIELD_SIZE + "px";
     field.style.height = FIELD_SIZE + "px";
-    field.style.background = "black";
+    field.style.background = "transparent"; // allow rest of screen click
     field.style.border = "2px solid white";
     field.style.display = "none";
     field.style.zIndex = "999999";
-    field.style.overflow = "hidden";
+    field.style.pointerEvents = "none"; // make background transparent to clicks
     document.body.appendChild(field);
 
     const toggle = document.createElement("img");
@@ -120,6 +119,7 @@ function drawCams(field) {
         btn.style.userSelect = "none";
         btn.style.cursor = "pointer";
         btn.style.zIndex = "10";
+        btn.style.pointerEvents = "auto"; // allow clicking only buttons
 
         btn.onmouseenter = () => btn.style.borderColor = "lime";
         btn.onmouseleave = () => btn.style.borderColor = "white";
@@ -140,12 +140,10 @@ function drawCams(field) {
 // Full closed loop with corners
 // --------------------
 function createFullClosedLoop() {
-    // first connect in loop
     for (let i = 0; i < CAM_COUNT; i++) {
         connectTwo(cams[i], cams[(i + 1) % CAM_COUNT]);
     }
 
-    // then fill remaining connections
     let done = false;
     while (!done) {
         done = true;
@@ -171,19 +169,17 @@ function connectTwo(a, b) {
     let sideB = getFreeSide(b);
     if (!sideA || !sideB) return;
 
-    let start = getSidePointOutside(a, sideA);
-    let end = getSidePointOutside(b, sideB);
+    let start = getSidePointEdge(a, sideA);
+    let end = getSidePointEdge(b, sideB);
 
-    // L-shaped corner always aligned to horizontal/vertical
-    let corner = { x: start.x, y: end.y }; // always horizontal then vertical
+    // L-shaped corner, horizontal then vertical
+    let corner = { x: start.x, y: end.y };
 
-    // Create segments
     let segs = [
         { x1: start.x, y1: start.y, x2: corner.x, y2: corner.y },
         { x1: corner.x, y1: corner.y, x2: end.x, y2: end.y }
     ];
 
-    // prevent crossing lines
     if (intersects(segs)) return;
 
     lines.push(...segs);
@@ -197,14 +193,13 @@ function connectTwo(a, b) {
 // Helpers
 // --------------------
 function getFreeSide(cam) { return sides.find(s => !cam.usedSides.includes(s)); }
-function getSidePointOutside(cam, side) {
+function getSidePointEdge(cam, side) {
     let cx = cam.x + BUTTON_SIZE / 2;
     let cy = cam.y + BUTTON_SIZE / 2;
-    let offset = 3;
-    if (side === "top") return { x: cx, y: cam.y - offset };
-    if (side === "bottom") return { x: cx, y: cam.y + BUTTON_SIZE + offset };
-    if (side === "left") return { x: cam.x - offset, y: cy };
-    if (side === "right") return { x: cam.x + BUTTON_SIZE + offset, y: cy };
+    if (side === "top") return { x: cx, y: cam.y };
+    if (side === "bottom") return { x: cx, y: cam.y + BUTTON_SIZE };
+    if (side === "left") return { x: cam.x, y: cy };
+    if (side === "right") return { x: cam.x + BUTTON_SIZE, y: cy };
 }
 function findNearestAvailable(cam) {
     return cams
@@ -227,7 +222,7 @@ function rangesOverlap(a1, a2, b1, b2) {
 }
 
 // --------------------
-// Draw lines
+// Draw lines under cams
 // --------------------
 function drawLines(field) {
     lines.forEach(s => {
@@ -240,13 +235,13 @@ function drawLines(field) {
         if (s.x1 === s.x2) {
             line.style.left = s.x1 + "px";
             line.style.top = Math.min(s.y1, s.y2) + "px";
-            line.style.width = "2px"; // thinner
+            line.style.width = "2px";
             line.style.height = Math.abs(s.y2 - s.y1) + "px";
         } else {
             line.style.left = Math.min(s.x1, s.x2) + "px";
-            line.style.top = s.y1 + "px";
+            line.style.top = Math.min(s.y1, s.y2) + "px";
             line.style.width = Math.abs(s.x2 - s.x1) + "px";
-            line.style.height = "2px"; // thinner
+            line.style.height = "2px";
         }
 
         field.appendChild(line);
