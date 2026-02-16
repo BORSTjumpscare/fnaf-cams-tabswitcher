@@ -131,17 +131,25 @@ function drawCams(field) {
         btn.onmouseenter = () => btn.style.borderColor = "lime";
         btn.onmouseleave = () => btn.style.borderColor = "white";
 
+        // Left-click -> switch/focus tab
         btn.onclick = () => {
-            chrome.runtime.sendMessage({
-                action: "switchTab",
-                url: camURLs[cam.id]
-            });
+            const url = camURLs[cam.id];
+            chrome.runtime.sendMessage({ action: "switchTabToUrl", url });
+        };
+
+        // Right-click -> change URL
+        btn.oncontextmenu = (e) => {
+            e.preventDefault();
+            const newURL = prompt(`Enter new URL for cam${cam.id + 1}:`, camURLs[cam.id]);
+            if (newURL && newURL.trim() !== "") {
+                camURLs[cam.id] = newURL.trim();
+                alert(`Cam${cam.id + 1} URL updated!`);
+            }
         };
 
         field.appendChild(btn);
     });
 }
-
 // --------------------
 // Closed loop generation with nearest neighbor
 // --------------------
