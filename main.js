@@ -10,92 +10,77 @@ toggleBtn.style.cursor = "pointer";
 toggleBtn.style.zIndex = "99999";
 document.body.appendChild(toggleBtn);
 
-// ---------- Sidebar ----------
-const overlay = document.createElement("div");
-overlay.style.position = "fixed";
-overlay.style.bottom = "70px";
-overlay.style.right = "10px";
-overlay.style.width = "120px"; // smaller
-overlay.style.backgroundColor = "rgba(0,0,0,0.9)";
-overlay.style.border = "1px solid lime";
-overlay.style.zIndex = "99998";
-overlay.style.padding = "3px";
-overlay.style.display = "none";
-overlay.style.flexDirection = "column";
-overlay.style.gap = "3px";
-overlay.style.fontFamily = "monospace";
-overlay.style.color = "lime";
-overlay.style.fontSize = "10px";
-document.body.appendChild(overlay);
+// ---------- Camera panel (lower right, small squares) ----------
+const camPanel = document.createElement("div");
+camPanel.style.position = "fixed";
+camPanel.style.bottom = "70px";
+camPanel.style.right = "10px";
+camPanel.style.display = "grid";
+camPanel.style.gridTemplateColumns = "repeat(2, 40px)";
+camPanel.style.gridGap = "5px";
+camPanel.style.zIndex = "99998";
+camPanel.style.backgroundColor = "rgba(0,0,0,0.8)";
+camPanel.style.padding = "5px";
+camPanel.style.border = "1px solid lime";
+camPanel.style.display = "none"; // hidden initially
+document.body.appendChild(camPanel);
+
+// ---------- Minimap overlay (separate, small) ----------
+const minimap = document.createElement("div");
+minimap.style.position = "fixed";
+minimap.style.bottom = "70px";
+minimap.style.right = "110px";
+minimap.style.width = "120px";
+minimap.style.height = "90px";
+minimap.style.backgroundColor = "#111";
+minimap.style.border = "1px solid gray";
+minimap.style.display = "flex";
+minimap.style.flexWrap = "wrap";
+minimap.style.padding = "2px";
+minimap.style.zIndex = "99997";
+document.body.appendChild(minimap);
+
+// Rooms on minimap (small squares, outline only)
+for (let i = 0; i < 6; i++) {
+  const room = document.createElement("div");
+  room.style.width = "35px";
+  room.style.height = "35px";
+  room.style.margin = "2px";
+  room.style.border = "1px solid gray";
+  room.style.backgroundColor = "transparent"; // only edges visible
+  minimap.appendChild(room);
+}
 
 // ---------- Camera buttons ----------
-const cams = ["cam1","cam2","cam3","cam4","cam5","cam6","cam7","cam8","cam9","cam10"];
-const camLabels = ["Hallway","Dining","Kitchen","Stage","Parts","Restroom","Office L","Office R","Backyard","Prize"];
+const cams = [
+  "cam1","cam2","cam3","cam4","cam5",
+  "cam6","cam7","cam8","cam9","cam10"
+];
+
 let camButtons = {};
 
 function createCamButtons() {
-  overlay.innerHTML = "";
-
+  camPanel.innerHTML = "";
   cams.forEach((cam,i)=>{
-    const camDiv = document.createElement("div");
-    camDiv.style.width = "110px";
-    camDiv.style.height = "60px"; // smaller
-    camDiv.style.backgroundColor = "black";
-    camDiv.style.border = "1px solid gray"; // simple outline
-    camDiv.style.display = "flex";
-    camDiv.style.flexDirection = "column";
-    camDiv.style.justifyContent = "space-between";
-    camDiv.style.alignItems = "center";
-    camDiv.style.cursor = "pointer";
-    camDiv.style.padding = "2px";
-    camDiv.style.color = "gray";
-    camDiv.style.fontSize = "9px";
-    camDiv.style.textAlign = "center";
-
-    // Label
-    const label = document.createElement("div");
-    label.innerText = `CAM${i+1} - ${camLabels[i]}`;
-    camDiv.appendChild(label);
-
-    // ---------- Mini FNAF map inside button ----------
-    const map = document.createElement("div");
-    map.style.width = "100px";
-    map.style.height = "35px";
-    map.style.position = "relative";
-
-    // Edge-only squares representing rooms
-    const rooms = [
-      {left:0,top:0},{left:35,top:0},{left:70,top:0},
-      {left:0,top:18},{left:35,top:18},{left:70,top:18}
-    ];
-
-    rooms.forEach((pos, idx)=>{
-      const r = document.createElement("div");
-      r.style.position="absolute";
-      r.style.width="30px";
-      r.style.height="15px";
-      r.style.left=pos.left+"px";
-      r.style.top=pos.top+"px";
-      r.style.border="1px solid gray"; // just outline
-      r.style.backgroundColor="transparent"; // no fill
-      if(idx === i%rooms.length) r.style.borderColor="lime"; // highlight camera location
-      map.appendChild(r);
-    });
-
-    camDiv.appendChild(map);
+    const btn = document.createElement("div");
+    btn.style.width = "40px";
+    btn.style.height = "40px";
+    btn.style.border = "1px solid gray";
+    btn.style.backgroundColor = "black";
+    btn.style.cursor = "pointer";
+    btn.style.display = "flex";
+    btn.style.justifyContent = "center";
+    btn.style.alignItems = "center";
+    btn.style.color = "gray";
+    btn.style.fontSize = "8px";
+    btn.innerText = `C${i+1}`;
 
     // Hover effect
-    camDiv.addEventListener("mouseenter",()=>{
-      camDiv.style.color="lime";
-      camDiv.style.border="1px solid lime";
-    });
-    camDiv.addEventListener("mouseleave",()=>{
-      camDiv.style.color="gray";
-      camDiv.style.border="1px solid gray";
-    });
+    btn.addEventListener("mouseenter",()=>{ btn.style.color="lime"; btn.style.border="1px solid lime"; });
+    btn.addEventListener("mouseleave",()=>{ btn.style.color="gray"; btn.style.border="1px solid gray"; });
 
-    // Left-click → switch/open tab
-    camDiv.addEventListener("click",()=>{
+    // Left-click → switch tab
+    btn.addEventListener("click",()=>{
       chrome.storage.local.get(cam,({[cam]:url})=>{
         if(!url) return alert(`Set URL for ${cam}`);
         chrome.runtime.sendMessage({action:"switchTab",url});
@@ -103,27 +88,27 @@ function createCamButtons() {
     });
 
     // Right-click → set/change URL
-    camDiv.addEventListener("contextmenu",(e)=>{
+    btn.addEventListener("contextmenu",(e)=>{
       e.preventDefault();
-      const newUrl = prompt(`Enter new URL for CAM${i+1}`);
-      if(newUrl) chrome.storage.local.set({[cam]:newUrl},()=>alert(`CAM${i+1} URL updated!`));
+      const newUrl = prompt(`Enter new URL for ${cam}`);
+      if(newUrl) chrome.storage.local.set({[cam]:newUrl},()=>alert(`${cam} URL updated!`));
     });
 
-    overlay.appendChild(camDiv);
-    camButtons[cam] = camDiv;
+    camPanel.appendChild(btn);
+    camButtons[cam] = btn;
   });
 }
 
-// ---------- Toggle overlay ----------
-let overlayVisible = false;
+// ---------- Toggle cam panel ----------
+let panelVisible = false;
 toggleBtn.addEventListener("click",()=>{
-  if(!overlayVisible){
+  if(!panelVisible){
     createCamButtons();
-    overlay.style.display="flex";
+    camPanel.style.display="grid";
   } else {
-    overlay.style.display="none";
+    camPanel.style.display="none";
   }
-  overlayVisible = !overlayVisible;
+  panelVisible=!panelVisible;
 });
 
 // ---------- Optional default URLs ----------
