@@ -23,7 +23,6 @@ let camURLs = [
 ];
 
 let field, lockBtn, toggleBtn;
-let mapGenerated = false;
 
 // --------------------
 // Create UI
@@ -40,10 +39,9 @@ function createUI() {
     field.style.border = "2px solid white";
     field.style.display = "none";
     field.style.zIndex = "999999";
-    field.style.pointerEvents = "none"; // allow clicks through field
+    field.style.pointerEvents = "none"; // allow clicks through background
     document.body.appendChild(field);
 
-    // Toggle button
     toggleBtn = document.createElement("img");
     toggleBtn.src = chrome.runtime.getURL("cam-button.png");
     toggleBtn.style.position = "fixed";
@@ -57,22 +55,18 @@ function createUI() {
     toggleBtn.onclick = () => {
         if (field.style.display === "none") {
             field.style.display = "block";
-            if (!locked && !mapGenerated) {
-                generateMap();
-                mapGenerated = true;
-            }
+            if (!locked) generateMap();
         } else {
             field.style.display = "none";
         }
     };
 
-    // Lock button
     lockBtn = document.createElement("button");
     lockBtn.innerText = "LOCK";
     lockBtn.style.position = "absolute";
     lockBtn.style.top = "5px";
     lockBtn.style.left = "5px";
-    lockBtn.style.pointerEvents = "auto";
+    lockBtn.style.pointerEvents = "auto"; // clickable
     lockBtn.onclick = () => {
         locked = !locked;
         lockBtn.innerText = locked ? "LOCKED" : "LOCK";
@@ -84,14 +78,17 @@ function createUI() {
 // Generate map
 // --------------------
 function generateMap() {
-    if (!mapGenerated) {
-        cams = [];
-        lines = [];
-        generateCams();
-        createFullClosedLoop();
-        drawLines();
-        drawCams();
-    }
+    // Remove old cams and lines
+    field.querySelectorAll(".cam").forEach(e => e.remove());
+    field.querySelectorAll(".line").forEach(e => e.remove());
+
+    cams = [];
+    lines = [];
+
+    generateCams();
+    createFullClosedLoop();
+    drawLines();
+    drawCams();
 }
 
 // --------------------
@@ -131,7 +128,7 @@ function drawCams() {
         btn.style.userSelect = "none";
         btn.style.cursor = "pointer";
         btn.style.zIndex = "10";
-        btn.style.pointerEvents = "auto";
+        btn.style.pointerEvents = "auto"; // clickable
 
         btn.onmouseenter = () => btn.style.borderColor = "lime";
         btn.onmouseleave = () => btn.style.borderColor = "white";
@@ -172,7 +169,7 @@ function createFullClosedLoop() {
 }
 
 // --------------------
-// Connect cams
+// Connect two cams
 // --------------------
 function connectTwo(a, b) {
     if (a.connections >= MAX_LINES || b.connections >= MAX_LINES) return;
@@ -181,10 +178,10 @@ function connectTwo(a, b) {
     let sideB = getFreeSide(b);
     if (!sideA || !sideB) return;
 
-    let start = getSidePointCenter(a, sideA); // center of side
+    let start = getSidePointCenter(a, sideA);
     let end = getSidePointCenter(b, sideB);
 
-    // L-corner horizontal then vertical
+    // L-corner: horizontal then vertical
     let corner = { x: start.x, y: end.y };
 
     let segs = [
@@ -208,10 +205,10 @@ function getFreeSide(cam) { return sides.find(s => !cam.usedSides.includes(s)); 
 function getSidePointCenter(cam, side) {
     let cx = cam.x + BUTTON_SIZE / 2;
     let cy = cam.y + BUTTON_SIZE / 2;
-    if (side === "top") return { x: cx, y: cam.y };
-    if (side === "bottom") return { x: cx, y: cam.y + BUTTON_SIZE };
-    if (side === "left") return { x: cam.x, y: cy };
-    if (side === "right") return { x: cam.x + BUTTON_SIZE, y: cy };
+    if (side === "top") return { x: cx, y: cam.y + BUTTON_SIZE/2 }; // middle of side
+    if (side === "bottom") return { x: cx, y: cam.y + BUTTON_SIZE/2 }; 
+    if (side === "left") return { x: cam.x + BUTTON_SIZE/2, y: cy };
+    if (side === "right") return { x: cam.x + BUTTON_SIZE/2, y: cy };
 }
 function findNearestAvailable(cam) {
     return cams
